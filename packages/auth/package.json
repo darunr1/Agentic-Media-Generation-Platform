@@ -1,0 +1,35 @@
+{
+  "name": "@contentforge/auth",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./permissions": "./src/permissions.ts",
+    "./workspace": "./src/workspace.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "2.11.3",
+    "@contentforge/database": "workspace:*",
+    "@contentforge/shared": "workspace:*",
+    "next-auth": "5.0.0-beta.32"
+  },
+  "peerDependencies": {
+    "next": "15.5.22",
+    "react": "19.2.8"
+  },
+  "devDependencies": {
+    "@contentforge/config": "workspace:*",
+    "@types/node": "22.20.1",
+    "eslint": "9.39.5",
+    "next": "15.5.22",
+    "react": "19.2.8",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

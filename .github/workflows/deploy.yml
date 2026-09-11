@@ -1,0 +1,12 @@
+name: Deploy (disabled until GCP secrets are configured)
+on: workflow_dispatch
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Enable only after configuring Workload Identity Federation, Artifact Registry, and Terraform state."

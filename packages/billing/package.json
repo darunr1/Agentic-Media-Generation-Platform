@@ -1,0 +1,25 @@
+{
+  "name": "@contentforge/billing",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@contentforge/database": "workspace:*",
+    "@contentforge/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@contentforge/config": "workspace:*",
+    "@types/node": "22.20.1",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

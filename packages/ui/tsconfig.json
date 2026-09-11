@@ -1,0 +1,8 @@
+{
+  "extends": "@contentforge/config/tsconfig/nextjs.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "baseUrl": "."
+  },
+  "include": ["src"]
+}

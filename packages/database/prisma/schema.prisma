@@ -1,0 +1,1343 @@
+// ContentForge database schema.
+// See DATA_MODEL.md for the narrative explanation of grouping, cascade
+// policy, and the workspace-isolation convention used throughout this file:
+//
+//   - Models that are direct children of a Workspace (Brand, Campaign,
+//     ContentItem, WorkflowRun, SocialConnection, Subscription, UsageLimit,
+//     RenderTemplate, ApiKey, FeatureFlag, UsageEvent, ProviderUsage,
+//     AuditLog, Notification) declare a *formal* `workspace Workspace
+//     @relation(...)`.
+//   - Deeply nested child models (Scene, VoiceTrack, CaptionTrack,
+//     ContentPillar, KnowledgeChunk, RenderedAsset, WorkflowStep,
+//     ApprovalDecision) rely on their immediate parent's relation chain for
+//     referential integrity and do NOT carry their own workspaceId column —
+//     repository helpers always filter through that chain, never a bare id.
+//   - Everything in between (BrandAsset, KnowledgeSource, ContentIdea,
+//     ContentVariant, MediaAsset, RenderJob, GenerationJob, ApprovalRequest,
+//     ContentComment, SocialAccount, PublishJob, PublishedPost,
+//     AnalyticsSnapshot) carries a *plain, indexed, denormalized*
+//     `workspaceId` column so list/queue views can filter directly without a
+//     deep join, without needing a full second Prisma relation.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Identity & workspace
+// =============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  isPlatformAdmin Boolean @default(false)
+
+  accounts            Account[]
+  sessions            Session[]
+  memberships         WorkspaceMembership[]
+  sentInvitations     Invitation[]          @relation("InvitationInvitedBy")
+  approvalDecisions   ApprovalDecision[]
+  contentComments     ContentComment[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  apiKeys             ApiKey[]
+  uploadedBrandAssets BrandAsset[]
+
+  @@index([email])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  EDITOR
+  REVIEWER
+  VIEWER
+}
+
+model Workspace {
+  id              String    @id @default(cuid())
+  name            String
+  slug            String    @unique
+  timezone        String    @default("UTC")
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  memberships       WorkspaceMembership[]
+  invitations       Invitation[]
+  brands            Brand[]
+  campaigns         Campaign[]
+  contentItems      ContentItem[]
+  workflowRuns      WorkflowRun[]
+  socialConnections SocialConnection[]
+  subscription      Subscription?
+  usageLimit        UsageLimit?
+  usageEvents       UsageEvent[]
+  providerUsage     ProviderUsage[]
+  renderTemplates   RenderTemplate[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  apiKeys           ApiKey[]
+  featureFlags      FeatureFlag[]
+
+  @@index([slug])
+}
+
+model WorkspaceMembership {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  userId          String
+  role            WorkspaceRole
+  invitedByUserId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+model Invitation {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  email           String
+  role            WorkspaceRole
+  tokenHash       String           @unique
+  status          InvitationStatus @default(PENDING)
+  invitedByUserId String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("InvitationInvitedBy", fields: [invitedByUserId], references: [id])
+
+  @@index([workspaceId, status])
+  @@index([email])
+}
+
+// =============================================================================
+// Brand knowledge
+// =============================================================================
+
+enum BrandStatus {
+  DRAFT
+  ONBOARDING
+  ACTIVE
+  ARCHIVED
+}
+
+model Brand {
+  id                 String      @id @default(cuid())
+  workspaceId        String
+  name               String
+  slug               String
+  industry           String
+  website            String?
+  description        String      @db.Text
+  productsServices   String      @db.Text
+  targetCustomers    String      @db.Text
+  geographicMarket   String
+  postsPerWeekTarget Int         @default(3)
+  primaryColor       String?
+  secondaryColor     String?
+  accentColor        String?
+  logoBrandAssetId   String?
+  status             BrandStatus @default(DRAFT)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  deletedAt          DateTime?
+
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brandVoice       BrandVoice?
+  guidelines       BrandGuideline[]
+  assets           BrandAsset[]
+  knowledgeSources KnowledgeSource[]
+  campaigns        Campaign[]
+  contentItems     ContentItem[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model BrandVoice {
+  id                String   @id @default(cuid())
+  brandId           String   @unique
+  toneTags          String[]
+  personality       String   @db.Text
+  writingStyleNotes String?  @db.Text
+  preferredPhrases  String[]
+  wordsToAvoid      String[]
+  sampleText        String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+}
+
+enum BrandGuidelineType {
+  PROHIBITED_CLAIM
+  COMPLIANCE_NOTE
+  REQUIRED_DISCLAIMER
+  CTA_STANDARD
+}
+
+model BrandGuideline {
+  id        String             @id @default(cuid())
+  brandId   String
+  type      BrandGuidelineType
+  content   String             @db.Text
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, type])
+}
+
+enum BrandAssetKind {
+  LOGO
+  PHOTO
+  VIDEO
+  FONT
+  OTHER
+}
+
+model BrandAsset {
+  id               String         @id @default(cuid())
+  brandId          String
+  workspaceId      String
+  kind             BrandAssetKind
+  storageKey       String
+  originalFilename String
+  mimeType         String
+  sizeBytes        Int
+  width            Int?
+  height           Int?
+  durationSeconds  Float?
+  checksumSha256   String
+  uploadedByUserId String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  deletedAt        DateTime?
+
+  brand      Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  uploadedBy User? @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([brandId, kind])
+}
+
+enum KnowledgeSourceType {
+  MANUAL_TEXT
+  TXT
+  MARKDOWN
+  PDF
+  CSV
+  URL
+}
+
+enum KnowledgeSourceStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+model KnowledgeSource {
+  id                 String                @id @default(cuid())
+  brandId            String
+  workspaceId        String
+  type               KnowledgeSourceType
+  status             KnowledgeSourceStatus @default(PENDING)
+  title              String
+  sourceUrl          String?
+  originalStorageKey String?
+  extractedText      String?               @db.Text
+  errorMessage       String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  deletedAt          DateTime?
+
+  brand  Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  chunks KnowledgeChunk[]
+
+  @@index([workspaceId])
+  @@index([brandId, status])
+}
+
+model KnowledgeChunk {
+  id                String   @id @default(cuid())
+  knowledgeSourceId String
+  brandId           String
+  chunkIndex        Int
+  content           String   @db.Text
+  embedding         Float[]
+  tokenCount        Int?
+  createdAt         DateTime @default(now())
+
+  knowledgeSource KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+  @@index([knowledgeSourceId])
+}
+
+// =============================================================================
+// Planning
+// =============================================================================
+
+enum Platform {
+  MOCK
+  INSTAGRAM
+  FACEBOOK
+  THREADS
+  TIKTOK
+  YOUTUBE
+  X
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+model Campaign {
+  id                  String         @id @default(cuid())
+  brandId             String
+  workspaceId         String
+  name                String
+  objective           String         @db.Text
+  theme               String?
+  startDate           DateTime
+  endDate             DateTime
+  targetPlatforms     Platform[]
+  status              CampaignStatus @default(DRAFT)
+  strategyJson        Json?
+  strategyGeneratedAt DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
+
+  brand        Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pillars      ContentPillar[]
+  ideas        ContentIdea[]
+  contentItems ContentItem[]
+
+  @@index([workspaceId, status])
+}
+
+model ContentPillar {
+  id               String   @id @default(cuid())
+  campaignId       String
+  name             String
+  description      String   @db.Text
+  audiencePain     String?  @db.Text
+  audienceDesire   String?  @db.Text
+  targetMixPercent Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  campaign     Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ideas        ContentIdea[]
+  contentItems ContentItem[]
+
+  @@index([campaignId])
+}
+
+enum ProductionDifficulty {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ContentFormat {
+  SHORT_VIDEO_9X16
+  FEED_1X1
+  FEED_4X5
+  VIDEO_16X9
+  TEXT_POST
+  THREAD
+  CAROUSEL
+}
+
+enum ContentIdeaStatus {
+  PROPOSED
+  ACCEPTED
+  REJECTED
+  ARCHIVED
+}
+
+model ContentIdea {
+  id                       String               @id @default(cuid())
+  campaignId               String
+  pillarId                 String?
+  workspaceId              String
+  title                    String
+  targetPlatform           Platform
+  format                   ContentFormat
+  hook                     String               @db.Text
+  audienceProblem          String               @db.Text
+  mainTakeaway             String               @db.Text
+  callToAction             String
+  productionDifficulty     ProductionDifficulty
+  estimatedDurationSeconds Int?
+  requiredAssets           String[]
+  noveltyExplanation       String               @db.Text
+  complianceNotes          String?              @db.Text
+  status                   ContentIdeaStatus    @default(PROPOSED)
+  generationJobId          String?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  deletedAt                DateTime?
+
+  campaign    Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  pillar      ContentPillar? @relation(fields: [pillarId], references: [id], onDelete: SetNull)
+  contentItem ContentItem?
+
+  @@index([workspaceId, status])
+  @@index([campaignId])
+}
+
+enum ContentItemStatus {
+  DRAFT
+  PLANNING
+  SCRIPTING
+  ASSET_GENERATION
+  VOICE_GENERATION
+  CAPTION_GENERATION
+  RENDERING
+  AWAITING_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  PARTIALLY_PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+model ContentItem {
+  id                             String            @id @default(cuid())
+  workspaceId                    String
+  brandId                        String
+  campaignId                     String?
+  pillarId                       String?
+  contentIdeaId                  String?           @unique
+  title                          String
+  status                         ContentItemStatus @default(DRAFT)
+  primaryFormat                  ContentFormat
+  scheduledAt                    DateTime?
+  complianceAcknowledged         Boolean           @default(false)
+  complianceAcknowledgedByUserId String?
+  complianceAcknowledgedAt       DateTime?
+  createdByUserId                String
+  createdAt                      DateTime          @default(now())
+  updatedAt                      DateTime          @updatedAt
+  deletedAt                      DateTime?
+
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand            Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  campaign         Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  pillar           ContentPillar?    @relation(fields: [pillarId], references: [id], onDelete: SetNull)
+  contentIdea      ContentIdea?      @relation(fields: [contentIdeaId], references: [id], onDelete: SetNull)
+  variants         ContentVariant[]
+  approvalRequests ApprovalRequest[]
+  workflowRuns     WorkflowRun[]
+  comments         ContentComment[]
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, scheduledAt])
+  @@index([brandId])
+}
+
+// =============================================================================
+// Production
+// =============================================================================
+
+enum AspectRatio {
+  RATIO_9X16
+  RATIO_1X1
+  RATIO_4X5
+  RATIO_16X9
+}
+
+model ContentVariant {
+  id                String        @id @default(cuid())
+  contentItemId     String
+  workspaceId       String
+  platform          Platform
+  aspectRatio       AspectRatio
+  format            ContentFormat
+  captionText       String?       @db.Text
+  hashtags          String[]
+  titleAlternatives String[]
+  thumbnailText     String?
+  isPrimary         Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+
+  contentItem ContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  script      Script?
+  renderJobs  RenderJob[]
+  publishJobs PublishJob[]
+
+  @@unique([contentItemId, platform, aspectRatio])
+  @@index([workspaceId])
+}
+
+model Script {
+  id                String   @id @default(cuid())
+  contentVariantId  String   @unique
+  openingHook       String   @db.Text
+  narration         String   @db.Text
+  onScreenText      String?  @db.Text
+  cta               String   @db.Text
+  caption           String   @db.Text
+  titleAlternatives String[]
+  hashtags          String[]
+  thumbnailText     String?
+  promptVersion     String
+  modelId           String
+  modelMetadata     Json?
+  generationJobId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  contentVariant ContentVariant @relation(fields: [contentVariantId], references: [id], onDelete: Cascade)
+  scenes         Scene[]
+  voiceTracks    VoiceTrack[]
+  captionTracks  CaptionTrack[]
+}
+
+enum SceneAssetType {
+  AI_IMAGE
+  AI_VIDEO
+  STOCK_IMAGE
+  STOCK_VIDEO
+  UPLOADED
+  TEXT_CARD
+  COLOR_BACKGROUND
+}
+
+enum SceneTransition {
+  CUT
+  FADE
+  SLIDE
+  ZOOM
+  NONE
+}
+
+model Scene {
+  id                String          @id @default(cuid())
+  scriptId          String
+  sequenceNumber    Int
+  startTimeMs       Int
+  endTimeMs         Int
+  narration         String          @db.Text
+  onScreenText      String?         @db.Text
+  visualPrompt      String          @db.Text
+  assetType         SceneAssetType
+  transition        SceneTransition @default(CUT)
+  motionInstruction String?
+  audioInstruction  String?
+  safeAreaNotes     String?
+  sourceAttribution String?
+  mediaAssetId      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  script     Script      @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  @@unique([scriptId, sequenceNumber])
+}
+
+enum MediaAssetSourceType {
+  UPLOAD
+  AI_GENERATED
+  STOCK
+  RENDER_OUTPUT
+}
+
+enum MediaAssetKind {
+  IMAGE
+  VIDEO
+  AUDIO
+  FONT
+}
+
+model MediaAsset {
+  id                String               @id @default(cuid())
+  workspaceId       String
+  brandId           String?
+  sourceType        MediaAssetSourceType
+  kind              MediaAssetKind
+  storageKey        String
+  originalFilename  String?
+  mimeType          String
+  sizeBytes         Int
+  width             Int?
+  height            Int?
+  durationSeconds   Float?
+  checksumSha256    String
+  providerName      String?
+  providerCostCents Int?
+  generationJobId   String?
+  uploadedByUserId  String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+
+  scenes Scene[]
+
+  @@index([workspaceId])
+  @@index([brandId])
+}
+
+model VoiceTrack {
+  id              String   @id @default(cuid())
+  scriptId        String
+  storageKey      String
+  durationSeconds Float
+  providerName    String
+  voiceId         String?
+  costCents       Int?
+  generationJobId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  script Script @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+}
+
+enum CaptionFormat {
+  SRT
+  WEBVTT
+}
+
+model CaptionTrack {
+  id              String        @id @default(cuid())
+  scriptId        String
+  format          CaptionFormat
+  storageKey      String
+  language        String        @default("en")
+  generationJobId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  script Script @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  @@unique([scriptId, format, language])
+}
+
+enum RenderTemplateKey {
+  EDUCATIONAL_LIST
+  MYTH_VS_FACT
+  PROMOTIONAL_OFFER
+  CUSTOM
+}
+
+model RenderTemplate {
+  id          String            @id @default(cuid())
+  workspaceId String?
+  key         RenderTemplateKey
+  name        String
+  description String            @db.Text
+  config      Json
+  isCustom    Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  workspace  Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  renderJobs RenderJob[]
+
+  @@index([workspaceId])
+}
+
+enum RenderJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model RenderJob {
+  id               String          @id @default(cuid())
+  workspaceId      String
+  contentVariantId String
+  renderTemplateId String
+  status           RenderJobStatus @default(QUEUED)
+  idempotencyKey   String
+  aspectRatios     AspectRatio[]
+  progressPercent  Int             @default(0)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  durationMs       Int?
+  costCents        Int?
+  errorMessage     String?
+  workflowStepId   String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  contentVariant ContentVariant  @relation(fields: [contentVariantId], references: [id], onDelete: Cascade)
+  renderTemplate RenderTemplate  @relation(fields: [renderTemplateId], references: [id])
+  outputs        RenderedAsset[]
+
+  @@unique([workspaceId, idempotencyKey])
+  @@index([workspaceId, status])
+}
+
+model RenderedAsset {
+  id                  String      @id @default(cuid())
+  renderJobId         String
+  aspectRatio         AspectRatio
+  storageKey          String
+  thumbnailStorageKey String?
+  durationSeconds     Float?
+  width               Int
+  height              Int
+  fileSizeBytes       Int
+  createdAt           DateTime    @default(now())
+
+  renderJob RenderJob @relation(fields: [renderJobId], references: [id], onDelete: Cascade)
+
+  @@index([renderJobId])
+}
+
+// =============================================================================
+// Orchestration
+// =============================================================================
+
+enum GenerationJobType {
+  STRATEGY
+  IDEA
+  SCRIPT
+  SCENE
+  IMAGE
+  VIDEO
+  VOICE
+  TRANSCRIPTION
+  EMBEDDING
+}
+
+enum GenerationJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model GenerationJob {
+  id               String              @id @default(cuid())
+  workspaceId      String
+  type             GenerationJobType
+  provider         String
+  model            String
+  status           GenerationJobStatus @default(PENDING)
+  promptVersion    String
+  inputJson        Json
+  outputJson       Json?
+  validationErrors Json?
+  retryCount       Int                 @default(0)
+  costCents        Int?
+  tokensIn         Int?
+  tokensOut        Int?
+  durationMs       Int?
+  workflowStepId   String?
+  idempotencyKey   String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@unique([workspaceId, idempotencyKey])
+  @@index([workspaceId, status])
+}
+
+enum WorkflowRunType {
+  STRATEGY_GENERATION
+  IDEA_GENERATION
+  SCRIPT_GENERATION
+  SCENE_GENERATION
+  CONTENT_PRODUCTION
+  RENDER
+  PUBLISH
+  ANALYTICS_COLLECTION
+}
+
+enum WorkflowRunStatus {
+  PENDING
+  RUNNING
+  WAITING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  DEAD_LETTER
+}
+
+model WorkflowRun {
+  id                String            @id @default(cuid())
+  workspaceId       String
+  contentItemId     String?
+  type              WorkflowRunType
+  status            WorkflowRunStatus @default(PENDING)
+  currentStepIndex  Int               @default(0)
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  totalCostCents    Int               @default(0)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentItem ContentItem?   @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  steps       WorkflowStep[]
+
+  @@index([workspaceId, status])
+  @@index([contentItemId])
+}
+
+enum WorkflowStepStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+model WorkflowStep {
+  id             String             @id @default(cuid())
+  workflowRunId  String
+  sequenceNumber Int
+  name           String
+  status         WorkflowStepStatus @default(PENDING)
+  input          Json?
+  output         Json?
+  errorMessage   String?
+  retryCount     Int                @default(0)
+  maxRetries     Int                @default(3)
+  idempotencyKey String
+  costCents      Int                @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowRunId, sequenceNumber])
+  @@unique([workflowRunId, idempotencyKey])
+}
+
+model ProviderUsage {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  provider      String
+  capability    String
+  costCents     Int
+  tokensIn      Int?
+  tokensOut     Int?
+  durationMs    Int?
+  referenceType String
+  referenceId   String
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+// =============================================================================
+// Review
+// =============================================================================
+
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  EXPIRED
+}
+
+model ApprovalRequest {
+  id                     String                @id @default(cuid())
+  workspaceId            String
+  contentItemId          String
+  status                 ApprovalRequestStatus @default(PENDING)
+  requestedByUserId      String
+  externalTokenHash      String?               @unique
+  externalTokenExpiresAt DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  contentItem ContentItem        @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  decisions   ApprovalDecision[]
+
+  @@index([workspaceId, status])
+  @@index([contentItemId])
+}
+
+enum ApprovalDecisionType {
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+model ApprovalDecision {
+  id                    String               @id @default(cuid())
+  approvalRequestId     String
+  decidedByUserId       String?
+  decidedByExternalName String?
+  decision              ApprovalDecisionType
+  notes                 String?              @db.Text
+  createdAt             DateTime             @default(now())
+
+  approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+  decidedBy       User?           @relation(fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([approvalRequestId])
+}
+
+enum CommentStatus {
+  OPEN
+  RESOLVED
+}
+
+model ContentComment {
+  id                 String        @id @default(cuid())
+  workspaceId        String
+  contentItemId      String
+  sceneId            String?
+  authorUserId       String?
+  authorExternalName String?
+  body               String        @db.Text
+  status             CommentStatus @default(OPEN)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  author      User?       @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([contentItemId, status])
+}
+
+// =============================================================================
+// Publishing
+// =============================================================================
+
+enum SocialConnectionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  ERROR
+}
+
+model SocialConnection {
+  id                    String                 @id @default(cuid())
+  workspaceId           String
+  platform              Platform
+  status                SocialConnectionStatus @default(ACTIVE)
+  encryptedAccessToken  Bytes?
+  encryptedRefreshToken Bytes?
+  tokenExpiresAt        DateTime?
+  scopes                String[]
+  externalUserId        String
+  connectedByUserId     String
+  lastValidatedAt       DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  deletedAt             DateTime?
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  accounts  SocialAccount[]
+
+  @@unique([workspaceId, platform, externalUserId])
+  @@index([workspaceId, status])
+}
+
+model SocialAccount {
+  id                 String   @id @default(cuid())
+  socialConnectionId String
+  workspaceId        String
+  platform           Platform
+  externalAccountId  String
+  displayName        String
+  handle             String?
+  avatarUrl          String?
+  capabilities       Json
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  socialConnection SocialConnection @relation(fields: [socialConnectionId], references: [id], onDelete: Cascade)
+  publishJobs      PublishJob[]
+
+  @@unique([socialConnectionId, externalAccountId])
+  @@index([workspaceId])
+}
+
+enum PublishJobStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+model PublishJob {
+  id               String           @id @default(cuid())
+  workspaceId      String
+  contentVariantId String
+  socialAccountId  String
+  status           PublishJobStatus @default(PENDING)
+  scheduledAt      DateTime
+  idempotencyKey   String
+  attemptCount     Int              @default(0)
+  lastErrorMessage String?
+  workflowStepId   String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  contentVariant ContentVariant @relation(fields: [contentVariantId], references: [id], onDelete: Cascade)
+  socialAccount  SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Restrict)
+  publishedPost  PublishedPost?
+
+  @@unique([contentVariantId, socialAccountId])
+  @@unique([workspaceId, idempotencyKey])
+  @@index([workspaceId, status, scheduledAt])
+}
+
+model PublishedPost {
+  id              String   @id @default(cuid())
+  publishJobId    String   @unique
+  workspaceId     String
+  socialAccountId String
+  platform        Platform
+  externalPostId  String
+  permalink       String?
+  publishedAt     DateTime
+  rawResponseJson Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  publishJob         PublishJob          @relation(fields: [publishJobId], references: [id], onDelete: Cascade)
+  analyticsSnapshots AnalyticsSnapshot[]
+
+  @@index([workspaceId])
+  @@index([socialAccountId])
+}
+
+// =============================================================================
+// Analytics
+// =============================================================================
+
+model AnalyticsSnapshot {
+  id                     String   @id @default(cuid())
+  publishedPostId        String
+  workspaceId            String
+  capturedAt             DateTime
+  views                  Int?
+  reach                  Int?
+  impressions            Int?
+  likes                  Int?
+  comments               Int?
+  shares                 Int?
+  saves                  Int?
+  watchTimeSeconds       Int?
+  avgViewDurationSeconds Float?
+  completionRate         Float?
+  clicks                 Int?
+  followersGained        Int?
+  raw                    Json?
+  createdAt              DateTime @default(now())
+
+  publishedPost PublishedPost @relation(fields: [publishedPostId], references: [id], onDelete: Cascade)
+
+  @@unique([publishedPostId, capturedAt])
+  @@index([workspaceId, capturedAt])
+}
+
+// =============================================================================
+// Billing
+// =============================================================================
+
+model Plan {
+  id                     String   @id @default(cuid())
+  key                    String   @unique
+  name                   String
+  monthlyPriceCents      Int
+  contentItemsPerMonth   Int
+  socialConnectionsLimit Int
+  brandsLimit            Int
+  teamMembersLimit       Int
+  hasAnalytics           Boolean  @default(false)
+  hasCalendar            Boolean  @default(false)
+  hasCustomTemplates     Boolean  @default(false)
+  hasClientApprovalLinks Boolean  @default(false)
+  priorityRendering      Boolean  @default(false)
+  stripePriceId          String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  UNPAID
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  workspaceId          String             @unique
+  planId               String
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  status               SubscriptionStatus @default(TRIALING)
+  trialEndsAt          DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan      Plan      @relation(fields: [planId], references: [id])
+}
+
+model UsageLimit {
+  id                     String   @id @default(cuid())
+  workspaceId            String   @unique
+  contentItemsPerMonth   Int
+  socialConnectionsLimit Int
+  brandsLimit            Int
+  teamMembersLimit       Int
+  monthlyBudgetCents     Int
+  budgetWarningPct       Float    @default(0.8)
+  overriddenByUserId     String?
+  overrideReason         String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+enum UsageEventType {
+  CONTENT_ITEM_GENERATED
+  RENDER_MINUTE
+  AI_TOKENS
+  PUBLISH
+  STORAGE_MB
+}
+
+model UsageEvent {
+  id            String         @id @default(cuid())
+  workspaceId   String
+  type          UsageEventType
+  quantity      Int            @default(1)
+  costCents     Int            @default(0)
+  referenceType String?
+  referenceId   String?
+  periodMonth   String
+  createdAt     DateTime       @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, periodMonth, type])
+}
+
+// =============================================================================
+// Cross-cutting
+// =============================================================================
+
+enum NotificationType {
+  INVITATION_RECEIVED
+  CONTENT_READY_FOR_REVIEW
+  CHANGES_REQUESTED
+  CONTENT_APPROVED
+  PUBLISH_SUCCEEDED
+  PUBLISH_PARTIALLY_SUCCEEDED
+  PUBLISH_FAILED
+  SOCIAL_AUTH_EXPIRED
+  TRIAL_ENDING
+  PAYMENT_FAILED
+  USAGE_THRESHOLD_REACHED
+  MONTHLY_REPORT_READY
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  workspaceId String
+  userId      String?
+  type        NotificationType
+  title       String
+  body        String           @db.Text
+  readAt      DateTime?
+  emailSentAt DateTime?
+  data        Json?
+  createdAt   DateTime         @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId, readAt])
+}
+
+enum WebhookSource {
+  STRIPE
+  INSTAGRAM
+  FACEBOOK
+  YOUTUBE
+  TIKTOK
+  X
+  THREADS
+}
+
+enum WebhookProcessingStatus {
+  PENDING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+model WebhookEvent {
+  id                 String                  @id @default(cuid())
+  source             WebhookSource
+  workspaceId        String?
+  externalEventId    String
+  status             WebhookProcessingStatus @default(PENDING)
+  rawPayloadRedacted Json
+  signatureValid     Boolean
+  processedAt        DateTime?
+  errorMessage       String?
+  createdAt          DateTime                @default(now())
+
+  @@unique([source, externalEventId])
+  @@index([workspaceId])
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  API_KEY
+}
+
+model AuditLog {
+  id          String         @id @default(cuid())
+  workspaceId String
+  actorUserId String?
+  actorType   AuditActorType @default(USER)
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime       @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([targetType, targetId])
+}
+
+model ApiKey {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  name            String
+  keyHash         String    @unique
+  keyPrefix       String
+  createdByUserId String
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdByUserId], references: [id])
+
+  @@index([workspaceId])
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  key         String
+  isEnabled   Boolean  @default(false)
+  variant     String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
+}

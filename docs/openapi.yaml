@@ -1,0 +1,85 @@
+openapi: 3.1.0
+info:
+  title: ContentForge API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /workspaces/{workspaceSlug}/brands:
+    get:
+      summary: List workspace brands
+      parameters: [{ $ref: "#/components/parameters/WorkspaceSlug" }]
+      responses: { "200": { description: Brand list } }
+    post:
+      summary: Create a brand profile
+      parameters:
+        [
+          { $ref: "#/components/parameters/WorkspaceSlug" },
+          { $ref: "#/components/parameters/IdempotencyKey" },
+        ]
+      responses:
+        { "201": { description: Brand created }, "400": { $ref: "#/components/responses/Error" } }
+  /workspaces/{workspaceSlug}/campaigns:
+    get:
+      summary: List campaigns
+      parameters: [{ $ref: "#/components/parameters/WorkspaceSlug" }]
+      responses: { "200": { description: Campaign list } }
+    post:
+      summary: Create a campaign
+      parameters:
+        [
+          { $ref: "#/components/parameters/WorkspaceSlug" },
+          { $ref: "#/components/parameters/IdempotencyKey" },
+        ]
+      responses: { "201": { description: Campaign created } }
+  /workspaces/{workspaceSlug}/generations/ideas:
+    post:
+      summary: Generate five validated content ideas
+      parameters:
+        [
+          { $ref: "#/components/parameters/WorkspaceSlug" },
+          { $ref: "#/components/parameters/IdempotencyKey" },
+        ]
+      responses:
+        {
+          "201": { description: Generation recorded },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+components:
+  parameters:
+    WorkspaceSlug: { name: workspaceSlug, in: path, required: true, schema: { type: string } }
+    IdempotencyKey:
+      {
+        name: Idempotency-Key,
+        in: header,
+        required: false,
+        schema: { type: string, minLength: 8, maxLength: 128 },
+      }
+  responses:
+    Error:
+      description: Consistent error envelope with request ID
+      content:
+        {
+          application/json:
+            {
+              schema:
+                {
+                  type: object,
+                  required: [error],
+                  properties:
+                    {
+                      error:
+                        {
+                          type: object,
+                          required: [code, message, requestId],
+                          properties:
+                            {
+                              code: { type: string },
+                              message: { type: string },
+                              requestId: { type: string },
+                            },
+                        },
+                    },
+                },
+            },
+        }

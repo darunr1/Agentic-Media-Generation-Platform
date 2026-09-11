@@ -1,0 +1,51 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: contentforge
+          POSTGRES_PASSWORD: contentforge
+          POSTGRES_DB: contentforge_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U contentforge -d contentforge_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://contentforge:contentforge@localhost:5432/contentforge_test?schema=public
+      AUTH_SECRET: ci-only-auth-secret-that-is-at-least-32-chars
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm --filter @contentforge/database db:migrate
+      - run: pnpm test
+      - run: pnpm build
+      - run: docker compose config --quiet
+  images:
+    runs-on: ubuntu-latest
+    needs: quality
+    strategy:
+      matrix: { service: [web, worker, renderer] }
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f infra/docker/${{ matrix.service }}.Dockerfile -t contentforge-${{ matrix.service }}:ci .

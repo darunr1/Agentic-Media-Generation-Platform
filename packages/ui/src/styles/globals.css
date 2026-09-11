@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ContentForge dark SaaS theme: deep navy background, restrained
+ * purple/blue accents, WCAG-conscious contrast. All colors are HSL triplets
+ * (no leading `hsl()`) so Tailwind's `hsl(var(--x) / <alpha-value>)` opacity
+ * syntax works. Light theme is included for prefers-color-science/testing
+ * but the product ships dark-by-default per the brief.
+ */
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 44% 9%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 44% 9%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 255 86% 68%;
+    --primary-foreground: 224 71% 8%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+
+    --accent: 199 89% 64%;
+    --accent-foreground: 224 71% 8%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 152 60% 45%;
+    --success-foreground: 210 40% 98%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 224 71% 8%;
+
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 255 86% 68%;
+
+    --radius: 0.75rem;
+  }
+
+  .light {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 255 70% 55%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 222 47% 11%;
+    --accent: 199 89% 48%;
+    --accent-foreground: 210 40% 98%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 215 16% 40%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 152 60% 36%;
+    --success-foreground: 210 40% 98%;
+    --warning: 38 92% 45%;
+    --warning-foreground: 222 47% 11%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 255 70% 55%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.4) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.4) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .bg-glow {
+    background: radial-gradient(
+      600px circle at var(--x, 50%) var(--y, 0%),
+      hsl(var(--primary) / 0.15),
+      transparent 60%
+    );
+  }
+}
