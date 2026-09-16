@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { dirname, join, normalize, resolve } from "node:path";
+import { dirname, join, normalize, resolve, sep } from "node:path";
 
 import ffmpegPath from "ffmpeg-static";
 
@@ -37,14 +37,14 @@ export class LocalObjectStorageProvider implements ObjectStorageProvider {
   private path(key: string): string {
     const root = resolve(this.root);
     const target = resolve(root, safeKey(key));
-    if (!target.startsWith(`${root}\\`) && target !== root)
+    if (!target.startsWith(`${root}${sep}`) && target !== root)
       throw new Error("Storage path escaped root");
     return target;
   }
   async put(key: string, bytes: Uint8Array, contentType: string): Promise<StorageObject> {
     const target = this.path(key);
     await mkdir(dirname(target), { recursive: true });
-    const temp = `${target}.${process.pid}.tmp`;
+    const temp = `${target}.${randomUUID()}.tmp`;
     await writeFile(temp, bytes);
     await rename(temp, target);
     return {
@@ -63,11 +63,17 @@ export class LocalObjectStorageProvider implements ObjectStorageProvider {
       if (error.code !== "ENOENT") throw error;
     });
   }
-  async createSignedUploadUrl(key: string, expiresInSeconds: number): Promise<string> {
-    return `${this.publicBaseUrl}/upload?key=${encodeURIComponent(safeKey(key))}&expires=${Date.now() + expiresInSeconds * 1000}`;
+  async createSignedUploadUrl(_key: string, _expiresInSeconds: number): Promise<string> {
+    throw new Error("Setup required: local browser uploads are not implemented");
   }
   async createSignedDownloadUrl(key: string, expiresInSeconds: number): Promise<string> {
-    return `${this.publicBaseUrl}/${encodeURIComponent(safeKey(key))}?expires=${Date.now() + expiresInSeconds * 1000}`;
+    return this.signedUrl(key, expiresInSeconds, "GET");
+  }
+  private signedUrl(key: string, seconds: number, method: string) {
+    const expires = Date.now() + Math.min(3600, Math.max(1, seconds)) * 1000;
+    const normalized = safeKey(key);
+    const signature = signStorageKey(normalized, expires, method);
+    return `${this.publicBaseUrl}?key=${encodeURIComponent(normalized)}&expires=${expires}&signature=${signature}`;
   }
   async healthCheck() {
     try {
@@ -253,3 +259,32 @@ export async function renderGradientVideo(
 export function storagePath(root: string, ...parts: string[]): string {
   return join(root, ...parts.map(safeKey));
 }
+
+function signStorageKey(key: string, expires: number, method: string) {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret || secret.length < 32) throw new Error("Storage signing requires AUTH_SECRET");
+  return createHmac("sha256", secret).update(`${method}\n${key}\n${expires}`).digest("hex");
+}
+export function verifyStorageSignature(
+  key: string,
+  expires: number,
+  signature: string,
+  method = "GET",
+) {
+  if (
+    !Number.isFinite(expires) ||
+    expires < Date.now() ||
+    expires > Date.now() + 3_600_000 ||
+    !/^[a-f0-9]{64}$/.test(signature)
+  )
+    return false;
+  try {
+    return timingSafeEqual(
+      Buffer.from(signature, "hex"),
+      Buffer.from(signStorageKey(safeKey(key), expires, method), "hex"),
+    );
+  } catch {
+    return false;
+  }
+}
+export * from "./scene-renderer";

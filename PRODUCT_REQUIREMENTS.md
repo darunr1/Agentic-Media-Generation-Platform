@@ -1,5 +1,7 @@
 # ContentForge — Product Requirements
 
+> This is the product roadmap. Executable scope and remaining work are recorded in [TASKS.md](TASKS.md). The current release uses mock social publishing, local storage and a PostgreSQL queue; real platform APIs, cloud adapters and paid billing flows are future integrations.
+
 ## 1. Summary
 
 ContentForge is a multi-tenant, service-assisted AI content generation and
@@ -11,8 +13,7 @@ queue, schedules and publishes approved content through official platform
 APIs, and feeds analytics back into future recommendations.
 
 This document is the canonical requirements reference. It is derived from the
-original engagement brief and is kept in sync with what is actually
-implemented — see [TASKS.md](TASKS.md) for current build status of each
+original engagement brief and is compared with current implementation — see [TASKS.md](TASKS.md) for current build status of each
 requirement.
 
 ## 2. Non-goals / explicit prohibitions

@@ -35,19 +35,29 @@ const envSchema = z.object({
   GCS_PROJECT_ID: z.string().optional(),
 
   // --- Task queue -------------------------------------------------------------
-  QUEUE_PROVIDER: z.enum(["local", "cloud-tasks"]).default("local"),
+  QUEUE_PROVIDER: z.enum(["postgres", "local", "cloud-tasks"]).default("postgres"),
   CLOUD_TASKS_PROJECT_ID: z.string().optional(),
   CLOUD_TASKS_LOCATION: z.string().optional(),
   CLOUD_TASKS_QUEUE: z.string().optional(),
   CLOUD_TASKS_WORKER_URL: z.string().url().optional(),
 
   // --- AI providers -----------------------------------------------------------
-  AI_TEXT_PROVIDER: z.enum(["mock", "anthropic"]).default("mock"),
+  AI_TEXT_PROVIDER: z.enum(["mock", "openai", "gemini"]).default("mock"),
   AI_IMAGE_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AI_VIDEO_PROVIDER: z.enum(["mock"]).default("mock"),
   AI_TTS_PROVIDER: z.enum(["mock", "elevenlabs"]).default("mock"),
   AI_TRANSCRIPTION_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
-  ANTHROPIC_API_KEY: z.string().optional(),
+  AI_FALLBACK_PROVIDER: z.enum(["openai", "gemini"]).optional(),
+  AI_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(45000),
+  OPENAI_TEXT_MODEL: z.string().optional(),
+  OPENAI_IMAGE_MODEL: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_TEXT_MODEL: z.string().optional(),
+  OPENAI_INPUT_CENTS_PER_MILLION: z.coerce.number().nonnegative().optional(),
+  OPENAI_OUTPUT_CENTS_PER_MILLION: z.coerce.number().nonnegative().optional(),
+  GEMINI_INPUT_CENTS_PER_MILLION: z.coerce.number().nonnegative().optional(),
+  GEMINI_OUTPUT_CENTS_PER_MILLION: z.coerce.number().nonnegative().optional(),
+  OPENAI_IMAGE_COST_CENTS: z.coerce.number().nonnegative().optional(),
   OPENAI_API_KEY: z.string().optional(),
   ELEVENLABS_API_KEY: z.string().optional(),
 
@@ -62,7 +72,10 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().default("ContentForge <notifications@contentforge.local>"),
 
   // --- Social -------------------------------------------------------------------
-  SOCIAL_MOCK: z.coerce.boolean().default(true),
+  SOCIAL_MOCK: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
   INSTAGRAM_CLIENT_ID: z.string().optional(),
   INSTAGRAM_CLIENT_SECRET: z.string().optional(),
   YOUTUBE_CLIENT_ID: z.string().optional(),
@@ -77,7 +90,6 @@ const envSchema = z.object({
 
   // --- Rendering ------------------------------------------------------------------
   RENDER_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
-  RENDER_MAX_CONCURRENT: z.coerce.number().int().positive().default(2),
   FFMPEG_PATH: z.string().optional(),
 
   // --- Observability -----------------------------------------------------------

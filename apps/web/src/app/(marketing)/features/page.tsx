@@ -19,7 +19,7 @@ const FEATURES = [
     icon: Bot,
     title: "Structured brand knowledge",
     description:
-      "A 10-section onboarding wizard captures products, audience, voice, visual identity, compliance rules, and CTAs into one BrandContext every generation step reads from.",
+      "Create and edit products, audience, voice, visual identity, compliance rules and CTAs in a reusable brand profile.",
   },
   {
     icon: Layers,
@@ -31,17 +31,17 @@ const FEATURES = [
     icon: Clapperboard,
     title: "Scripts, scenes & real rendering",
     description:
-      "Typed scripts and scene-by-scene production plans render into real MP4s via FFmpeg/Remotion — 9:16, 1:1, 4:5, and 16:9, with burned-in captions and brand styling.",
+      "Render persisted scene images, on-screen text, captions and reference audio into real 9:16 MP4 files with FFmpeg.",
   },
   {
     icon: FileCheck2,
     title: "Approval built in, not bolted on",
     description:
-      "A mandatory review queue with scene-level comments, regenerate-one-scene, version history, and expiring client approval links — publishing is blocked without it.",
+      "Review playable video and copy, compare saved versions, leave comments and request changes. Publishing requires approval and compliance acknowledgment.",
   },
   {
     icon: Share2,
-    title: "Official-API publishing only",
+    title: "Mock publishing and scheduled delivery",
     description:
       "A typed SocialPlatformProvider interface with a fully working mock adapter plus Instagram/YouTube OAuth scaffolding — unsupported platforms are marked, never faked.",
   },
@@ -49,7 +49,7 @@ const FEATURES = [
     icon: BarChart3,
     title: "Evidence-based analytics",
     description:
-      "Normalized metrics by platform, pillar, hook, and format, with recommendations explicitly labeled as hypotheses when the sample size is too small to trust.",
+      "Filter stored metrics by date, platform and content. Export CSV and inspect the snapshot evidence supporting each descriptive recommendation.",
   },
   {
     icon: Calendar,
@@ -61,7 +61,7 @@ const FEATURES = [
     icon: ShieldCheck,
     title: "Cost & usage guardrails",
     description:
-      "Per-workspace spending caps, per-job generation limits, and full provider cost tracking so AI spend never runs away unnoticed.",
+      "Recorded usage estimates, workspace admission limits and bounded retries help control generation. Missing provider pricing is identified in usage records.",
   },
 ];
 

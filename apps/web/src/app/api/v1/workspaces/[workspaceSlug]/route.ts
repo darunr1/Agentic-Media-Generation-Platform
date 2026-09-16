@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/server/api/handler";
 import { z } from "zod";
 
 import { assertWorkspacePermission } from "@contentforge/auth";
@@ -10,7 +11,7 @@ const renameSchema = z.object({ name: z.string().trim().min(2).max(80) });
 export const PATCH = apiHandler<{ workspaceSlug: string }>(async (req, { userId, params }) => {
   const workspace = await resolveWorkspaceOrThrow(params.workspaceSlug);
   await assertWorkspacePermission(userId, workspace.id, "settings:write");
-  const body = renameSchema.parse(await req.json());
+  const body = renameSchema.parse(await readJsonBody(req));
   const updated = await renameWorkspace(workspace.id, body.name, userId!);
   return jsonOk(updated);
 });

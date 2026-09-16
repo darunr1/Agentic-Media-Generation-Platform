@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/server/api/handler";
 import { z } from "zod";
 import { assertWorkspacePermission } from "@contentforge/auth";
 import { apiHandler, jsonOk } from "@/server/api/handler";
@@ -13,7 +14,7 @@ export const POST = apiHandler<{ workspaceSlug: string }>(
   async (req, { userId, params, requestId }) => {
     const w = await resolveWorkspaceOrThrow(params.workspaceSlug);
     await assertWorkspacePermission(userId, w.id, "publish:execute");
-    const body = schema.parse(await req.json());
+    const body = schema.parse(await readJsonBody(req));
     return jsonOk(
       await scheduleOrPublish({
         ...body,

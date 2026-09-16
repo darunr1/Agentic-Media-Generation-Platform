@@ -1,3 +1,5 @@
+import { hasPermission } from "@contentforge/auth";
+import { RecordForm, ActionButton } from "@/components/product/workflow-actions";
 import { notFound } from "next/navigation";
 import { CalendarRange, Target } from "lucide-react";
 import { prisma } from "@contentforge/database";
@@ -17,6 +19,22 @@ export default async function CampaignsPage({
     include: { pillars: true, _count: { select: { ideas: true, contentItems: true } } },
     orderBy: { createdAt: "desc" },
   });
+  const brands = await prisma.brand.findMany({
+    where: { workspaceId: ctx.workspace.id, deletedAt: null },
+    select: { id: true, name: true },
+  });
+  const fields = [
+    {
+      name: "brandId",
+      label: "Brand",
+      options: brands.map((b) => ({ value: b.id, label: b.name })),
+    },
+    { name: "name", label: "Campaign name" },
+    { name: "objective", label: "Campaign objective", type: "textarea" },
+    { name: "startDate", label: "Start date", type: "date" },
+    { name: "endDate", label: "End date", type: "date" },
+    { name: "targetPlatforms", label: "Platforms (comma separated)" },
+  ];
   return (
     <div className="space-y-6">
       <PageHeading
@@ -24,6 +42,18 @@ export default async function CampaignsPage({
         title="Campaigns"
         description="Deterministic monthly plans connect business objectives to content pillars, platform mix, measurable outcomes, and compliance risks."
       />
+      {hasPermission(ctx.role, "campaign:write") && (
+        <details>
+          <summary className="cursor-pointer font-medium">Create campaign</summary>
+          <RecordForm
+            url={`/api/v1/workspaces/${workspaceSlug}/campaigns`}
+            fields={fields}
+            arrays={["targetPlatforms"]}
+            initial={{ targetPlatforms: "MOCK" }}
+            label="Create campaign"
+          />
+        </details>
+      )}
       {campaigns.map((campaign) => (
         <Card key={campaign.id}>
           <CardHeader className="flex-row items-start justify-between space-y-0">
@@ -42,6 +72,59 @@ export default async function CampaignsPage({
             <CalendarRange className="text-muted-foreground size-5" />
           </CardHeader>
           <CardContent>
+            <div className="mb-5 flex flex-wrap gap-3">
+              {hasPermission(ctx.role, "content:generate") && (
+                <>
+                  <ActionButton
+                    url={`/api/v1/workspaces/${workspaceSlug}/generations/strategy`}
+                    body={{ campaignId: campaign.id }}
+                  >
+                    Generate strategy
+                  </ActionButton>
+                  <ActionButton
+                    url={`/api/v1/workspaces/${workspaceSlug}/generations/ideas`}
+                    body={{ campaignId: campaign.id }}
+                    disabled={!campaign.strategyJson}
+                  >
+                    Generate ideas
+                  </ActionButton>
+                </>
+              )}
+              <a
+                className="text-primary self-center text-sm underline"
+                href={`/w/${workspaceSlug}/ideas?campaignId=${campaign.id}`}
+              >
+                Open idea board
+              </a>
+            </div>
+            {hasPermission(ctx.role, "campaign:write") && (
+              <details className="mb-5">
+                <summary className="cursor-pointer text-sm">Edit campaign</summary>
+                <RecordForm
+                  url={`/api/v1/workspaces/${workspaceSlug}/campaigns/${campaign.id}`}
+                  method="PATCH"
+                  fields={fields}
+                  arrays={["targetPlatforms"]}
+                  initial={{
+                    brandId: campaign.brandId,
+                    name: campaign.name,
+                    objective: campaign.objective,
+                    startDate: campaign.startDate.toISOString().slice(0, 10),
+                    endDate: campaign.endDate.toISOString().slice(0, 10),
+                    targetPlatforms: campaign.targetPlatforms.join(", "),
+                  }}
+                  label="Save campaign"
+                />
+              </details>
+            )}
+            {campaign.strategyJson && (
+              <details className="mb-4">
+                <summary className="cursor-pointer text-sm">Campaign strategy</summary>
+                <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs">
+                  {JSON.stringify(campaign.strategyJson, null, 2)}
+                </pre>
+              </details>
+            )}
             <div className="grid gap-4 sm:grid-cols-3">
               {campaign.pillars.map((pillar) => (
                 <div key={pillar.id} className="bg-secondary/30 rounded-xl p-4">

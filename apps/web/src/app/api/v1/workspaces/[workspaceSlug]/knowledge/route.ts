@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/server/api/handler";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { assertWorkspaceMembership, assertWorkspacePermission } from "@contentforge/auth";
@@ -43,7 +44,7 @@ export const GET = apiHandler<{ workspaceSlug: string }>(async (_req, { userId, 
 export const POST = apiHandler<{ workspaceSlug: string }>(async (req, { userId, params }) => {
   const w = await resolveWorkspaceOrThrow(params.workspaceSlug);
   await assertWorkspacePermission(userId, w.id, "brand:write");
-  const body = schema.parse(await req.json());
+  const body = schema.parse(await readJsonBody(req));
   const brand = await prisma.brand.findFirstOrThrow({
     where: { id: body.brandId, workspaceId: w.id },
   });

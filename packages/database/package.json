@@ -31,7 +31,9 @@
     "prisma": "6.19.3",
     "tsx": "4.23.1",
     "typescript": "5.9.3",
-    "vitest": "3.2.7"
+    "vitest": "3.2.7",
+    "@contentforge/ai": "workspace:*",
+    "@contentforge/media": "workspace:*"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

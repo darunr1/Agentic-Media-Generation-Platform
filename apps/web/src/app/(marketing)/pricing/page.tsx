@@ -13,8 +13,8 @@ export default function PricingPage() {
       <div className="mx-auto mb-12 max-w-2xl text-center">
         <h1 className="text-4xl font-semibold tracking-tight">Simple, usage-aware pricing</h1>
         <p className="text-muted-foreground mt-3">
-          Every plan starts with a free trial. No guaranteed results, no hidden usage — your
-          plan&apos;s limits are always visible in the dashboard.
+          Illustrative local plans demonstrate usage limits. Paid checkout requires Stripe
+          integration; this build does not collect payments.
         </p>
       </div>
       <div className="grid gap-6 lg:grid-cols-3">
@@ -28,7 +28,7 @@ export default function PricingPage() {
             }
           >
             {index === 1 ? (
-              <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">Most popular</Badge>
+              <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">Growth plan</Badge>
             ) : null}
             <CardHeader>
               <CardTitle className="text-xl">{plan.name}</CardTitle>
@@ -50,16 +50,15 @@ export default function PricingPage() {
                 ))}
               </ul>
               <Button asChild className="w-full" variant={index === 1 ? "default" : "outline"}>
-                <Link href="/sign-up">Start free trial</Link>
+                <Link href="/sign-up">Explore the demo</Link>
               </Button>
             </CardContent>
           </Card>
         ))}
       </div>
       <p className="text-muted-foreground mx-auto mt-10 max-w-2xl text-center text-xs">
-        Prices shown are illustrative defaults for this build and are stored as data, not hard-coded
-        — an administrator can adjust them without a deploy. ContentForge does not guarantee
-        revenue, followers, or engagement outcomes.
+        Prices shown are illustrative defaults for this build. Paid billing requires external setup.
+        ContentForge does not guarantee revenue, followers, or engagement outcomes.
       </p>
     </div>
   );

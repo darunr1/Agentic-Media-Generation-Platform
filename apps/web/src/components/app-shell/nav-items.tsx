@@ -35,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "knowledge", label: "Knowledge", icon: BookOpen },
   { href: "campaigns", label: "Campaigns", icon: Megaphone },
   { href: "ideas", label: "Idea board", icon: Lightbulb },
+  { href: "workflows", label: "Workflow runs", icon: FileStack },
   { href: "studio", label: "Content studio", icon: Sparkles },
   { href: "approvals", label: "Approvals", icon: CheckCircle2 },
   { href: "calendar", label: "Calendar", icon: CalendarDays },

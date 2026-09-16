@@ -1,3 +1,14 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { MockImageGenerationProvider, MockTextToSpeechProvider } from "@contentforge/ai";
+import {
+  LocalObjectStorageProvider,
+  localStorageRoot,
+  renderScenes,
+  toSrt,
+  toWebVtt,
+} from "@contentforge/media";
 /**
  * Seed script — built up incrementally, phase by phase (see DATA_MODEL.md
  * §5). The fixtures cover the complete local journey without external APIs.
@@ -129,7 +140,7 @@ async function seedDemoJourney(userId: string, workspaceId: string) {
               type: "PROHIBITED_CLAIM",
               content: "Never claim coffee treats, cures, or prevents a health condition.",
             },
-            { type: "REQUIRED_DISCLAIMER", content: "Clearly state offer terms and availability." },
+            { type: "REQUIRED_DISCLAIMER", content: "Offers are subject to availability." },
             { type: "CTA_STANDARD", content: "Invite one useful, low-pressure next action." },
           ],
         },
@@ -178,6 +189,22 @@ async function seedDemoJourney(userId: string, workspaceId: string) {
         status: "ACTIVE",
         strategyGeneratedAt: new Date(),
         strategyJson: {
+          campaignTheme: "Make better coffee feel welcoming",
+          contentPillars: [
+            {
+              name: "Coffee education",
+              description: "Practical brewing knowledge",
+              percentage: 50,
+            },
+            { name: "People and craft", description: "People behind each roast", percentage: 30 },
+            {
+              name: "Products and offers",
+              description: "Transparent product stories",
+              percentage: 20,
+            },
+          ],
+          postingMix: [{ platform: "INSTAGRAM", format: "SHORT_VIDEO", count: 8 }],
+          complianceConsiderations: ["Avoid unsupported health claims"],
           audiencePains: ["Inconsistent home coffee"],
           audienceDesires: ["A reliable morning ritual"],
           successMetrics: ["saves", "completion rate", "bookings"],
@@ -415,10 +442,10 @@ async function seedDemoJourney(userId: string, workspaceId: string) {
                 },
                 voiceTracks: {
                   create: {
-                    storageKey: "demo/audio/placeholder-voice.wav",
+                    storageKey: "demo/audio/reference-tone.wav",
                     durationSeconds: 24,
                     providerName: "mock",
-                    voiceId: "local-placeholder",
+                    voiceId: "reference-tone",
                     costCents: 0,
                   },
                 },
@@ -689,12 +716,94 @@ async function seedDemoJourney(userId: string, workspaceId: string) {
   );
 }
 
+async function ensureDemoMedia(workspaceId: string) {
+  const storage = new LocalObjectStorageProvider(localStorageRoot());
+  const variants = await prisma.contentVariant.findMany({
+    where: { workspaceId, script: { isNot: null } },
+    include: {
+      script: {
+        include: {
+          scenes: { orderBy: { sequenceNumber: "asc" } },
+          voiceTracks: true,
+          captionTracks: true,
+        },
+      },
+      renderJobs: { include: { outputs: true } },
+    },
+  });
+  for (const variant of variants) {
+    const script = variant.script!;
+    const durationSeconds = (script.scenes.at(-1)?.endTimeMs ?? 24000) / 1000;
+    const audio = await new MockTextToSpeechProvider().synthesize({
+      text: script.narration,
+      voice: "reference-tone",
+      durationSeconds,
+      idempotencyKey: `seed:${script.id}:audio`,
+    });
+    for (const track of script.voiceTracks)
+      await storage.put(track.storageKey, audio.data.bytes, "audio/wav");
+    const cues = script.scenes.map((scene) => ({
+      startSeconds: scene.startTimeMs / 1000,
+      endSeconds: scene.endTimeMs / 1000,
+      text: scene.narration,
+    }));
+    for (const track of script.captionTracks)
+      await storage.put(
+        track.storageKey,
+        Buffer.from(track.format === "SRT" ? toSrt(cues) : toWebVtt(cues)),
+        track.format === "SRT" ? "application/x-subrip" : "text/vtt",
+      );
+    const scenes = await Promise.all(
+      script.scenes.map(async (scene) => ({
+        bytes: (
+          await new MockImageGenerationProvider().generateImage({
+            prompt: scene.visualPrompt,
+            idempotencyKey: `seed:${scene.id}`,
+            width: 360,
+            height: 640,
+          })
+        ).data.bytes,
+        durationSeconds: (scene.endTimeMs - scene.startTimeMs) / 1000,
+        text: scene.onScreenText ?? "",
+        caption: scene.narration,
+      })),
+    );
+    for (const output of variant.renderJobs.flatMap((job) => job.outputs)) {
+      if (existsSync(resolve(localStorageRoot(), output.storageKey))) continue;
+      const [width, height] =
+        output.aspectRatio === "RATIO_9X16"
+          ? [360, 640]
+          : output.aspectRatio === "RATIO_1X1"
+            ? [640, 640]
+            : [640, 360];
+      const result = await renderScenes({
+        scenes,
+        audio: audio.data.bytes,
+        width: width!,
+        height: height!,
+      });
+      await storage.put(output.storageKey, result.bytes, "video/mp4");
+      await prisma.renderedAsset.update({
+        where: { id: output.id },
+        data: {
+          fileSizeBytes: result.sizeBytes,
+          width: width!,
+          height: height!,
+          durationSeconds: result.durationSeconds,
+          thumbnailStorageKey: null,
+        },
+      });
+    }
+  }
+}
+
 async function main() {
   console.log("Seeding database...");
   await seedPlanCatalog();
   const { user, workspace } = await seedDemoWorkspace();
   await seedDemoJourney(user.id, workspace.id);
-  console.log("Seed complete.");
+  await ensureDemoMedia(workspace.id);
+  console.log("Seed complete; local video and caption files are playable.");
 }
 
 main()

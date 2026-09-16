@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { readJsonBody } from "@/server/api/handler";
+import { decideApproval } from "@contentforge/workflows";
 import { z } from "zod";
 import { assertWorkspaceMembership, assertWorkspacePermission } from "@contentforge/auth";
 import { prisma } from "@contentforge/database";
-import { NotFoundError } from "@contentforge/shared";
 import { apiHandler, jsonOk } from "@/server/api/handler";
 import { resolveWorkspaceOrThrow } from "@/server/api/workspace-params";
 const schema = z.object({
@@ -35,43 +35,8 @@ export const GET = apiHandler<{ workspaceSlug: string }>(async (_req, { userId, 
 export const POST = apiHandler<{ workspaceSlug: string }>(async (req, { userId, params }) => {
   const w = await resolveWorkspaceOrThrow(params.workspaceSlug);
   await assertWorkspacePermission(userId, w.id, "content:approve");
-  const body = schema.parse(await req.json());
-  const request = await prisma.approvalRequest.findFirst({
-    where: { id: body.approvalRequestId, workspaceId: w.id },
-  });
-  if (!request) throw new NotFoundError("Approval request", body.approvalRequestId);
-  const status = body.decision;
-  const contentStatus =
-    status === "APPROVED"
-      ? "APPROVED"
-      : status === "CHANGES_REQUESTED"
-        ? "CHANGES_REQUESTED"
-        : "DRAFT";
-  const decision = await prisma.$transaction(async (tx) => {
-    const created = await tx.approvalDecision.create({
-      data: {
-        approvalRequestId: request.id,
-        decidedByUserId: userId,
-        decision: body.decision,
-        notes: body.notes,
-      },
-    });
-    await tx.approvalRequest.update({ where: { id: request.id }, data: { status } });
-    await tx.contentItem.update({
-      where: { id: request.contentItemId },
-      data: { status: contentStatus },
-    });
-    await tx.auditLog.create({
-      data: {
-        workspaceId: w.id,
-        actorUserId: userId,
-        action: `content.review.${body.decision.toLowerCase()}`,
-        targetType: "ContentItem",
-        targetId: request.contentItemId,
-        metadata: { approvalRequestId: request.id },
-      },
-    });
-    return created;
-  });
-  return NextResponse.json({ data: decision }, { status: 201 });
+  const body = schema
+    .extend({ complianceAcknowledged: z.boolean().optional() })
+    .parse(await readJsonBody(req));
+  return jsonOk(await decideApproval({ ...body, workspaceId: w.id, userId: userId! }), 201);
 });

@@ -33,7 +33,7 @@ test("seeded user can traverse the complete product workspace", async ({ page },
   for (const [path, heading] of [
     ["brand", "Riverbend Coffee Roasters"],
     ["ideas", "Idea board"],
-    ["studio", "Taste coffee in three steps"],
+
     ["approvals", "Approval queue"],
     ["analytics", "Analytics"],
   ] as const) {

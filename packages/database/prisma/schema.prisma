@@ -646,6 +646,10 @@ model MediaAsset {
   height            Int?
   durationSeconds   Float?
   checksumSha256    String
+  model             String?
+  prompt            String? @db.Text
+  generatedAt       DateTime?
+  workflowRunId     String?
   providerName      String?
   providerCostCents Int?
   generationJobId   String?
@@ -845,6 +849,10 @@ model WorkflowRun {
   contentItemId     String?
   type              WorkflowRunType
   status            WorkflowRunStatus @default(PENDING)
+  idempotencyKey    String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  errorMessage      String?
   currentStepIndex  Int               @default(0)
   cancelledAt       DateTime?
   cancelledByUserId String?
@@ -855,12 +863,16 @@ model WorkflowRun {
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   contentItem ContentItem?   @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
   steps       WorkflowStep[]
+  tasks       QueuedTask[]
 
   @@index([workspaceId, status])
   @@index([contentItemId])
+  @@unique([workspaceId, idempotencyKey])
 }
 
 enum WorkflowStepStatus {
+  RETRYING
+  CANCELLED
   PENDING
   RUNNING
   SUCCEEDED
@@ -874,6 +886,10 @@ model WorkflowStep {
   sequenceNumber Int
   name           String
   status         WorkflowStepStatus @default(PENDING)
+  agentName      String?
+  provider       String?
+  model          String?
+  validation     Json?
   input          Json?
   output         Json?
   errorMessage   String?
@@ -1340,4 +1356,50 @@ model FeatureFlag {
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, key])
+}
+
+// Durable queue; reservation tokens fence stale workers after lease expiry.
+enum QueuedTaskStatus {
+  QUEUED
+  RUNNING
+  RETRYING
+  COMPLETED
+  DEAD_LETTER
+  CANCELLED
+}
+
+model QueuedTask {
+  id             String @id @default(cuid())
+  workspaceId    String
+  workflowRunId  String?
+  type           String
+  payload        Json
+  idempotencyKey String
+  status         QueuedTaskStatus @default(QUEUED)
+  scheduledAt    DateTime @default(now())
+  reservedAt     DateTime?
+  leaseExpiresAt DateTime?
+  reservationToken String?
+  completedAt    DateTime?
+  failedAt       DateTime?
+  attemptCount   Int @default(0)
+  maxAttempts    Int @default(3)
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  workflowRun WorkflowRun? @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, idempotencyKey])
+  @@index([status, scheduledAt])
+  @@index([status, leaseExpiresAt])
+  @@index([workflowRunId])
+}
+
+model ContentVersion {
+  id String @id @default(cuid())
+  workspaceId String
+  contentItemId String
+  snapshot Json
+  createdByUserId String
+  createdAt DateTime @default(now())
+  @@index([workspaceId, contentItemId, createdAt])
 }

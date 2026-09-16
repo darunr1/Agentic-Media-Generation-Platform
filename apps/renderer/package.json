@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "dotenv -e ../../.env -- tsx src/index.ts",
     "render:demo": "tsx src/demo.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
@@ -16,7 +16,9 @@
   "dependencies": {
     "@contentforge/media": "workspace:*",
     "@contentforge/shared": "workspace:*",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@contentforge/workflows": "workspace:*",
+    "@contentforge/database": "workspace:*"
   },
   "devDependencies": {
     "@contentforge/config": "workspace:*",

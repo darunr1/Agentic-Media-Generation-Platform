@@ -34,6 +34,19 @@ export function createLogger(options: CreateLoggerOptions) {
     name: options.name,
     level: options.level ?? process.env.LOG_LEVEL ?? "info",
     redact: { paths: REDACT_PATHS, censor: "[REDACTED]" },
+    serializers: {
+      // SDK/network errors can embed request headers, URLs and secret-bearing bodies.
+      err: (error: unknown) => ({
+        name: error instanceof Error ? error.name : "Error",
+        code:
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          typeof error.code === "string"
+            ? error.code.replace(/[^A-Z0-9_]/g, "").slice(0, 40)
+            : "UNKNOWN",
+      }),
+    },
     formatters: {
       level(label) {
         return { level: label };

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 export type SocialPlatform =
   "MOCK" | "INSTAGRAM" | "FACEBOOK" | "THREADS" | "TIKTOK" | "YOUTUBE" | "X";
 export interface SocialCapabilities {
@@ -141,10 +142,12 @@ export class MockSocialPlatformProvider implements SocialPlatformProvider {
     return { mediaId: `mock-media-${media.sizeBytes}` };
   }
   async createPost(input: PostInput) {
+    const errors = this.validateContent(input);
+    if (errors.length) throw new Error(errors.join("; "));
     const existing = this.posts.get(input.idempotencyKey);
     if (existing) return existing;
     const result = {
-      externalPostId: `mock-${input.idempotencyKey.slice(0, 20)}`,
+      externalPostId: `mock-${createHash("sha256").update(`${input.accountId}:${input.idempotencyKey}`).digest("hex").slice(0, 32)}`,
       permalink: `/mock-social/posts/${encodeURIComponent(input.idempotencyKey)}`,
       publishedAt: new Date(),
       status: "PUBLISHED" as const,

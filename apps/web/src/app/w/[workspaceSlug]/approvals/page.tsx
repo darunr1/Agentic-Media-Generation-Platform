@@ -1,8 +1,10 @@
+import { hasPermission } from "@contentforge/auth";
+import { ReviewActions } from "@/components/product/workflow-actions";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Clock3, MessageSquareText, ShieldCheck } from "lucide-react";
+import { MessageSquareText } from "lucide-react";
 import { prisma } from "@contentforge/database";
 import { Badge, Card, CardContent } from "@contentforge/ui";
-import { ContentPreview } from "@/components/product/content-preview";
+import { LocalObjectStorageProvider, localStorageRoot } from "@contentforge/media";
 import { PageHeading } from "@/components/product/page-heading";
 import { getWorkspaceContext } from "@/server/services/workspace-context";
 export default async function ApprovalsPage({
@@ -16,11 +18,34 @@ export default async function ApprovalsPage({
   const requests = await prisma.approvalRequest.findMany({
     where: { workspaceId: ctx.workspace.id },
     include: {
-      contentItem: { include: { variants: true } },
+      contentItem: {
+        include: {
+          variants: {
+            where: { isPrimary: true, deletedAt: null },
+            include: {
+              renderJobs: {
+                where: { status: "SUCCEEDED" },
+                orderBy: { createdAt: "desc" },
+                take: 1,
+                include: { outputs: true },
+              },
+            },
+          },
+        },
+      },
       decisions: { include: { decidedBy: true } },
     },
     orderBy: { createdAt: "desc" },
   });
+  const storage = new LocalObjectStorageProvider(localStorageRoot());
+  const previews = new Map(
+    await Promise.all(
+      requests.map(async (request) => {
+        const key = request.contentItem.variants[0]?.renderJobs[0]?.outputs[0]?.storageKey;
+        return [request.id, key ? await storage.createSignedDownloadUrl(key, 3600) : null] as const;
+      }),
+    ),
+  );
   return (
     <div className="space-y-6">
       <PageHeading
@@ -34,10 +59,20 @@ export default async function ApprovalsPage({
         return (
           <Card key={request.id}>
             <CardContent className="grid gap-6 p-6 lg:grid-cols-[220px_1fr]">
-              <ContentPreview
-                title={request.contentItem.title}
-                caption={variant?.captionText ?? "Preview caption"}
-              />
+              <div>
+                {previews.get(request.id) ? (
+                  <video
+                    className="w-full rounded-xl"
+                    aria-label={`Review preview: ${request.contentItem.title}`}
+                    src={previews.get(request.id)!}
+                    controls
+                    preload="metadata"
+                  />
+                ) : (
+                  <p className="text-muted-foreground text-sm">No rendered preview available.</p>
+                )}
+                <p className="mt-3 text-sm">{variant?.captionText}</p>
+              </div>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={request.status === "APPROVED" ? "success" : "warning"}>
@@ -46,11 +81,21 @@ export default async function ApprovalsPage({
                   <Badge variant="outline">{variant?.platform}</Badge>
                 </div>
                 <h2 className="mt-4 text-xl font-semibold">{request.contentItem.title}</h2>
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  <Check icon={ShieldCheck} label="Compliance acknowledged" />
-                  <Check icon={CheckCircle2} label="Assets complete" />
-                  <Check icon={Clock3} label="Connection active" />
-                </div>
+                <p className="mt-3 text-sm">
+                  Compliance:{" "}
+                  {request.contentItem.complianceAcknowledged ? "Acknowledged" : "Review required"}
+                </p>
+                <a
+                  className="text-primary mt-3 inline-block text-sm underline"
+                  href={`/w/${workspaceSlug}/studio?contentId=${request.contentItemId}`}
+                >
+                  Preview video and compare versions
+                </a>
+                {request.status === "PENDING" &&
+                  request.contentItem.status === "AWAITING_REVIEW" &&
+                  hasPermission(ctx.role, "content:approve") && (
+                    <ReviewActions workspaceSlug={workspaceSlug} requestId={request.id} />
+                  )}
                 {decision && (
                   <div className="bg-secondary/30 mt-5 rounded-xl p-4">
                     <div className="flex items-center gap-2">
@@ -73,20 +118,6 @@ export default async function ApprovalsPage({
           </Card>
         );
       })}
-    </div>
-  );
-}
-function Check({
-  icon: Icon,
-  label,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-200">
-      <Icon className="size-4" />
-      {label}
     </div>
   );
 }

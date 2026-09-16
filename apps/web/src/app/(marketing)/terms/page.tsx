@@ -39,9 +39,8 @@ export default function TermsPage() {
         <section>
           <h2 className="text-foreground text-lg font-semibold">Billing</h2>
           <p>
-            Subscriptions are billed monthly in advance via Stripe. You can cancel, upgrade, or
-            downgrade at any time from Billing settings; changes take effect per Stripe&apos;s
-            standard proration rules.
+            This local build demonstrates subscription limits and does not collect payments. Paid
+            checkout, cancellation and plan changes require a configured Stripe integration.
           </p>
         </section>
         <section>

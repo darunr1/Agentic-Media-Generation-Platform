@@ -38,9 +38,13 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://contentforge:contentforge@postgres:5432/contentforge_dev?schema=public
+      LOCAL_STORAGE_DIR: /data
+      QUEUE_PROVIDER: postgres
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - contentforge_media:/data
     ports:
       - "3000:3000"
 
@@ -51,10 +55,14 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://contentforge:contentforge@postgres:5432/contentforge_dev?schema=public
+      LOCAL_STORAGE_DIR: /data
+      QUEUE_PROVIDER: postgres
       WORKER_PORT: 3001
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - contentforge_media:/data
     ports:
       - "3001:3001"
 
@@ -64,8 +72,13 @@ services:
       dockerfile: infra/docker/renderer.Dockerfile
     env_file: .env
     environment:
+      DATABASE_URL: postgresql://contentforge:contentforge@postgres:5432/contentforge_dev?schema=public
+      QUEUE_PROVIDER: postgres
       RENDERER_PORT: 3002
       LOCAL_STORAGE_DIR: /data
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - contentforge_media:/data
     ports:

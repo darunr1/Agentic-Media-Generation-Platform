@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/server/api/handler";
 import { z } from "zod";
 
 import { listUserWorkspaceMemberships } from "@contentforge/auth";
@@ -9,7 +10,7 @@ const createWorkspaceSchema = z.object({
 });
 
 export const POST = apiHandler(async (req, { userId }) => {
-  const body = createWorkspaceSchema.parse(await req.json());
+  const body = createWorkspaceSchema.parse(await readJsonBody(req));
   const workspace = await createWorkspace({ userId: userId!, name: body.name });
   return jsonOk(workspace, 201);
 });

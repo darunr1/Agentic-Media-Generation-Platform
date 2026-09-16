@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/server/api/handler";
 import { z } from "zod";
 
 import { assertWorkspacePermission } from "@contentforge/auth";
@@ -19,7 +20,7 @@ export const GET = apiHandler<{ workspaceSlug: string }>(async (_req, { userId, 
 export const POST = apiHandler<{ workspaceSlug: string }>(async (req, { userId, params }) => {
   const workspace = await resolveWorkspaceOrThrow(params.workspaceSlug);
   await assertWorkspacePermission(userId, workspace.id, "team:manage");
-  const body = inviteSchema.parse(await req.json());
+  const body = inviteSchema.parse(await readJsonBody(req));
   const invitation = await inviteMember({
     workspaceId: workspace.id,
     workspaceName: workspace.name,

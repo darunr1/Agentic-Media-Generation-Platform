@@ -29,25 +29,25 @@ const STEPS = [
     icon: Clapperboard,
     title: "Render real video, locally",
     description:
-      "Scripts become timed captions, voiceover, and platform-ready 9:16 / 1:1 / 4:5 / 16:9 renders — produced by FFmpeg and Remotion, not a black box.",
+      "Turn scene images, captions and reference audio into playable 9:16 MP4 videos with FFmpeg. Natural speech and additional production formats require further setup.",
   },
   {
     icon: ClipboardCheck,
     title: "Review before anything goes out",
     description:
-      "Every piece of content sits in an approval queue by default. Nothing publishes without a human — or an expiring client approval link — saying yes.",
+      "Review the rendered video and copy, request changes, and acknowledge compliance before approving content for scheduling.",
   },
   {
     icon: Calendar,
     title: "Schedule and publish",
     description:
-      "Approved content is scheduled and published through official platform APIs only. No scraping, no bots, no fake engagement.",
+      "Schedule approved content for the working mock destination. Real social publishing requires platform approval and an implemented adapter.",
   },
   {
     icon: LineChart,
     title: "Learn from what actually happens",
     description:
-      "Real analytics feed evidence-based recommendations for your next plan — clearly labeled as hypotheses when the sample size is small.",
+      "Inspect stored mock analytics and recommendations linked to their source snapshots. Real audience metrics require a connected platform adapter.",
   },
 ];
 

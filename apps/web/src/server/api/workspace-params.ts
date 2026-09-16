@@ -8,7 +8,7 @@ export async function resolveWorkspaceOrThrow(workspaceSlug: string) {
   const workspace = await prisma.workspace.findUnique({
     where: { slug: workspaceSlug },
   });
-  if (!workspace) {
+  if (!workspace || workspace.deletedAt) {
     throw new NotFoundError("Workspace", workspaceSlug);
   }
   return workspace;

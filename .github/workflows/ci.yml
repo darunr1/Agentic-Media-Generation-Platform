@@ -39,7 +39,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm --filter @contentforge/database db:migrate
       - run: pnpm test
+      - run: pnpm test:integration
       - run: pnpm build
+      - run: pnpm --filter @contentforge/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - run: cp .env.example .env
       - run: docker compose config --quiet
   images:
     runs-on: ubuntu-latest
