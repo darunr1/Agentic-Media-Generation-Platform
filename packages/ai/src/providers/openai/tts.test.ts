@@ -22,6 +22,7 @@ async function setup() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
@@ -40,7 +41,11 @@ describe("OpenAI speech adapter", () => {
 
     expect(create).toHaveBeenCalledWith(
       { model: "tts-1", input: input.text, voice: "alloy", response_format: "wav" },
-      { timeout: 120_000, headers: { "Idempotency-Key": "speech-test" } },
+      {
+        timeout: 120_000,
+        signal: expect.any(AbortSignal),
+        headers: { "Idempotency-Key": "speech-test" },
+      },
     );
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, options] = fetch.mock.calls[0]!;
@@ -177,5 +182,73 @@ describe("OpenAI speech adapter", () => {
       provider: "openai",
     });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, 60])(
+    "aborts a stalled audio body within the total deadline after %i ms waiting for headers",
+    async (headerDelay) => {
+      vi.useFakeTimers();
+      const { provider, fetch } = await setup();
+      let requestSignal: AbortSignal | null | undefined;
+      let body: ReadableStreamDefaultController<Uint8Array> | undefined;
+      const aborted = vi.fn();
+      fetch.mockImplementationOnce(async (_url, options) => {
+        requestSignal = options?.signal;
+        if (headerDelay) await new Promise((resolve) => setTimeout(resolve, headerDelay));
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              body = controller;
+              requestSignal?.addEventListener(
+                "abort",
+                () => {
+                  aborted();
+                  controller.error(new DOMException("Aborted", "AbortError"));
+                },
+                { once: true },
+              );
+            },
+          }),
+          { headers: { "content-type": "audio/wav" } },
+        );
+      });
+      const settled = vi.fn();
+      const result = provider.synthesize({ ...input, timeoutMs: 100 }).then(
+        () => settled("fulfilled"),
+        (error: unknown) => settled(error),
+      );
+      try {
+        await vi.advanceTimersByTimeAsync(99);
+        expect(body).toBeDefined();
+        expect(settled).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(settled).toHaveBeenCalledWith(
+          expect.objectContaining({
+            code: "TIMEOUT",
+            retryable: true,
+            provider: "openai",
+          }),
+        );
+        expect(requestSignal?.aborted).toBe(true);
+        expect(aborted).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        body?.error(new Error("Test cleanup"));
+        await result;
+      }
+    },
+  );
+
+  it.each(["success", "failure"])("clears the deadline after %s", async (outcome) => {
+    vi.useFakeTimers();
+    const { provider, fetch } = await setup();
+    if (outcome === "failure") fetch.mockRejectedValueOnce(new TypeError("fetch failed"));
+    const result = provider.synthesize({ ...input, timeoutMs: 100 });
+    if (outcome === "failure") await expect(result).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    else await expect(result).resolves.toMatchObject({ data: { mimeType: "audio/wav" } });
+    expect(vi.getTimerCount()).toBe(0);
+    const signal = fetch.mock.calls[0]?.[1]?.signal;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(signal?.aborted).toBe(false);
   });
 });
