@@ -97,6 +97,7 @@ describe("OpenAI speech adapter", () => {
     { timeoutMs: -1 },
     { timeoutMs: NaN },
     { timeoutMs: Infinity },
+    { timeoutMs: 2_147_483_648 },
   ])("rejects invalid input before calling the SDK (case %#)", async (invalid) => {
     const { provider, create } = await setup();
     await expect(provider.synthesize({ ...input, ...invalid })).rejects.toMatchObject({
@@ -147,6 +148,7 @@ describe("OpenAI speech adapter", () => {
     [429, "RATE_LIMITED", true],
     [500, "UNAVAILABLE", true],
     [401, "INVALID_REQUEST", false],
+    [408, "TIMEOUT", true],
   ])("classifies HTTP %i errors", async (status, code, retryable) => {
     const { provider, fetch } = await setup();
     fetch.mockResolvedValueOnce(

@@ -42,7 +42,10 @@ export class OpenAITextToSpeechProvider implements TextToSpeechProvider {
       input.text.length > 4096 ||
       !input.voice.trim() ||
       !input.idempotencyKey.trim() ||
-      (input.timeoutMs !== undefined && (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0))
+      (input.timeoutMs !== undefined &&
+        (!Number.isFinite(input.timeoutMs) ||
+          input.timeoutMs <= 0 ||
+          input.timeoutMs > 2_147_483_647))
     )
       throw new ProviderError("Invalid speech request", "INVALID_REQUEST", false, this.name);
     const started = Date.now();
@@ -100,7 +103,11 @@ export class OpenAITextToSpeechProvider implements TextToSpeechProvider {
       };
     } catch (error) {
       // SDK connection errors have no HTTP status and retain the generic Error name.
-      if (controller.signal.aborted || error instanceof OpenAI.APIConnectionTimeoutError)
+      if (
+        controller.signal.aborted ||
+        error instanceof OpenAI.APIConnectionTimeoutError ||
+        (error instanceof OpenAI.APIError && error.status === 408)
+      )
         throw new ProviderError("OpenAI speech request timed out", "TIMEOUT", true, this.name);
       if (error instanceof OpenAI.APIConnectionError)
         throw new ProviderError("OpenAI speech connection failed", "UNAVAILABLE", true, this.name);
