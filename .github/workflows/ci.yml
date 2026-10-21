@@ -27,12 +27,17 @@ jobs:
       AUTH_SECRET: ci-only-auth-secret-that-is-at-least-32-chars
       ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       APP_URL: http://localhost:3000
+      FFMPEG_PATH: /usr/bin/ffmpeg
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with: { version: 9.15.0 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
+      - name: Install media rendering dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
