@@ -72,6 +72,8 @@ export class OpenAITextToSpeechProvider implements TextToSpeechProvider {
               response_format: "wav",
             },
             {
+              // Keep retries with the caller, including for injected SDK clients.
+              maxRetries: 0,
               timeout: timeoutMs,
               signal: controller.signal,
               headers: { "Idempotency-Key": input.idempotencyKey },
@@ -109,8 +111,16 @@ export class OpenAITextToSpeechProvider implements TextToSpeechProvider {
         (error instanceof OpenAI.APIError && error.status === 408)
       )
         throw new ProviderError("OpenAI speech request timed out", "TIMEOUT", true, this.name);
-      if (error instanceof OpenAI.APIConnectionError)
-        throw new ProviderError("OpenAI speech connection failed", "UNAVAILABLE", true, this.name);
+      if (
+        error instanceof OpenAI.APIConnectionError ||
+        (error instanceof OpenAI.APIError && error.status === 409)
+      )
+        throw new ProviderError(
+          "OpenAI speech service unavailable",
+          "UNAVAILABLE",
+          true,
+          this.name,
+        );
       throw classifyProviderError(error, this.name);
     } finally {
       if (timer !== undefined) clearTimeout(timer);

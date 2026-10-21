@@ -42,6 +42,7 @@ describe("OpenAI speech adapter", () => {
     expect(create).toHaveBeenCalledWith(
       { model: "tts-1", input: input.text, voice: "alloy", response_format: "wav" },
       {
+        maxRetries: 0,
         timeout: 120_000,
         signal: expect.any(AbortSignal),
         headers: { "Idempotency-Key": "speech-test" },
@@ -149,6 +150,7 @@ describe("OpenAI speech adapter", () => {
     [500, "UNAVAILABLE", true],
     [401, "INVALID_REQUEST", false],
     [408, "TIMEOUT", true],
+    [409, "UNAVAILABLE", true],
   ])("classifies HTTP %i errors", async (status, code, retryable) => {
     const { provider, fetch } = await setup();
     fetch.mockResolvedValueOnce(
@@ -173,6 +175,23 @@ describe("OpenAI speech adapter", () => {
       retryable: true,
       provider: "openai",
     });
+  });
+
+  it("leaves retries to the caller even when an injected client enables them", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+          headers: { "content-type": "application/json", "retry-after-ms": "1" },
+        }),
+    );
+    const client = new OpenAI({ apiKey: "unit-test-key", fetch });
+    const provider = new OpenAITextToSpeechProvider("test", "tts-1", client);
+    await expect(provider.synthesize(input)).rejects.toMatchObject({
+      code: "RATE_LIMITED",
+      retryable: true,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("classifies SDK connection failures as retryable", async () => {
