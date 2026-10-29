@@ -6,7 +6,7 @@ import { z } from "zod";
  * fast here is the "secret validation at startup" requirement — a
  * misconfigured deploy should never boot far enough to serve traffic.
  */
-const envSchema = z.object({
+const baseEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_URL: z.string().url().default("http://localhost:3000"),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -96,7 +96,9 @@ const envSchema = z.object({
 
   // --- Observability -----------------------------------------------------------
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
-}).superRefine((config, ctx) => {
+});
+
+const envSchema = baseEnvSchema.superRefine((config, ctx) => {
   if (config.AI_TTS_PROVIDER !== "openai") return;
   for (const key of ["OPENAI_API_KEY", "OPENAI_TTS_MODEL", "OPENAI_TTS_VOICE"] as const) {
     if (!config[key]?.trim()) {
