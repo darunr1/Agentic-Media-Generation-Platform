@@ -45,12 +45,14 @@ const envSchema = z.object({
   AI_TEXT_PROVIDER: z.enum(["mock", "openai", "gemini"]).default("mock"),
   AI_IMAGE_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AI_VIDEO_PROVIDER: z.enum(["mock"]).default("mock"),
-  AI_TTS_PROVIDER: z.enum(["mock", "elevenlabs"]).default("mock"),
+  AI_TTS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AI_TRANSCRIPTION_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AI_FALLBACK_PROVIDER: z.enum(["openai", "gemini"]).optional(),
   AI_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(45000),
   OPENAI_TEXT_MODEL: z.string().optional(),
   OPENAI_IMAGE_MODEL: z.string().optional(),
+  OPENAI_TTS_MODEL: z.string().optional(),
+  OPENAI_TTS_VOICE: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_TEXT_MODEL: z.string().optional(),
   OPENAI_INPUT_CENTS_PER_MILLION: z.coerce.number().nonnegative().optional(),
@@ -94,6 +96,17 @@ const envSchema = z.object({
 
   // --- Observability -----------------------------------------------------------
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+}).superRefine((config, ctx) => {
+  if (config.AI_TTS_PROVIDER !== "openai") return;
+  for (const key of ["OPENAI_API_KEY", "OPENAI_TTS_MODEL", "OPENAI_TTS_VOICE"] as const) {
+    if (!config[key]?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} is required when AI_TTS_PROVIDER=openai`,
+      });
+    }
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;
