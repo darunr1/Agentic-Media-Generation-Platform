@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+/** D03: the selector exists, but the production voice worker remains mock-only until D04. */
+export const OPENAI_TTS_NOT_WIRED_MESSAGE =
+  "AI_TTS_PROVIDER=openai is not supported by the production pipeline yet: real OpenAI TTS is not wired into generation.voice; use AI_TTS_PROVIDER=mock until D04.";
+
 /**
  * Every environment variable the platform reads, in one place, validated at
  * process startup (imported at the top of each app's entrypoint). Failing
@@ -100,6 +104,11 @@ const baseEnvSchema = z.object({
 
 const envSchema = baseEnvSchema.superRefine((config, ctx) => {
   if (config.AI_TTS_PROVIDER !== "openai") return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["AI_TTS_PROVIDER"],
+    message: OPENAI_TTS_NOT_WIRED_MESSAGE,
+  });
   for (const key of ["OPENAI_API_KEY", "OPENAI_TTS_MODEL", "OPENAI_TTS_VOICE"] as const) {
     if (!config[key]?.trim()) {
       ctx.addIssue({
