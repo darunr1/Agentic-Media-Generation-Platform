@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createTtsProvider } from "../../index";
+import { createTtsProvider } from "../index";
 
 import { MockTextToSpeechProvider } from "./mock/media";
 import { OpenAITextToSpeechProvider } from "./openai/tts";
