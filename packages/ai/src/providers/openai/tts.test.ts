@@ -274,7 +274,6 @@ describe("OpenAI speech adapter", () => {
   });
 });
 
-
 describe("D02: isolated TTS outcomes cannot become mock successes", () => {
   it("uses only the injected SDK transport for successful synthesis", async () => {
     const unexpectedNetwork = vi
