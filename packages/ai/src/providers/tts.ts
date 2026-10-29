@@ -57,7 +57,7 @@ export function createTtsProvider(source: NodeJS.ProcessEnv = process.env): Text
     !voice && "OPENAI_TTS_VOICE",
   ].filter(Boolean);
 
-  if (missing.length > 0) {
+  if (!apiKey || !model || !voice) {
     throw new ProviderError(
       `OpenAI TTS configuration required: ${missing.join(", ")}`,
       "INVALID_REQUEST",
@@ -69,5 +69,5 @@ export function createTtsProvider(source: NodeJS.ProcessEnv = process.env): Text
   // Values were validated above. Never instantiate a network client in mock mode.
   const adapter = new OpenAITextToSpeechProvider(apiKey, model);
   adapter.validateConfiguration();
-  return new ConfiguredOpenAITextToSpeechProvider(adapter, voice!);
+  return new ConfiguredOpenAITextToSpeechProvider(adapter, voice);
 }
