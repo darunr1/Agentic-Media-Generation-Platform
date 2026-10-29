@@ -273,3 +273,112 @@ describe("OpenAI speech adapter", () => {
     expect(signal?.aborted).toBe(false);
   });
 });
+
+describe("D02: isolated TTS outcomes cannot become mock successes", () => {
+  it("uses only the injected SDK transport for successful synthesis", async () => {
+    const unexpectedNetwork = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("Unexpected real network call"));
+    const { provider, fixture, fetch } = await setup();
+
+    const result = await provider.synthesize(input);
+
+    expect(result.data.bytes).toEqual(fixture.data.bytes);
+    expect(result.data.mimeType).toBe("audio/wav");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(unexpectedNetwork).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when environment credentials are absent", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("OPENAI_TTS_MODEL", "tts-1");
+    const unexpectedNetwork = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("Unexpected real network call"));
+    const provider = new OpenAITextToSpeechProvider();
+
+    await expect(provider.synthesize(input)).rejects.toMatchObject({
+      code: "INVALID_REQUEST",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(unexpectedNetwork).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, "INVALID_REQUEST", false],
+    [429, "RATE_LIMITED", true],
+    [503, "UNAVAILABLE", true],
+  ])("never turns HTTP %i failures into mock speech", async (status, code, retryable) => {
+    const { provider, fetch } = await setup();
+    const mockSynthesize = vi.spyOn(MockTextToSpeechProvider.prototype, "synthesize");
+    const unexpectedNetwork = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("Unexpected real network call"));
+    fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "Upstream speech failure" } }), {
+        status,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(provider.synthesize(input)).rejects.toMatchObject({
+      code,
+      retryable,
+      provider: "openai",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(mockSynthesize).not.toHaveBeenCalled();
+    expect(unexpectedNetwork).not.toHaveBeenCalled();
+  });
+
+  it("times out before receiving headers without returning mock audio", async () => {
+    vi.useFakeTimers();
+    const { provider, fetch } = await setup();
+    const mockSynthesize = vi.spyOn(MockTextToSpeechProvider.prototype, "synthesize");
+    const unexpectedNetwork = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("Unexpected real network call"));
+    let requestSignal: AbortSignal | null | undefined;
+    fetch.mockImplementationOnce((_url, options) => {
+      requestSignal = options?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    });
+
+    const pending = provider.synthesize({ ...input, timeoutMs: 50 });
+    const rejection = expect(pending).rejects.toMatchObject({
+      code: "TIMEOUT",
+      retryable: true,
+      provider: "openai",
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    await rejection;
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(mockSynthesize).not.toHaveBeenCalled();
+    expect(unexpectedNetwork).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("rejects corrupt success responses instead of returning mock WAV bytes", async () => {
+    const { provider, fetch } = await setup();
+    const mockSynthesize = vi.spyOn(MockTextToSpeechProvider.prototype, "synthesize");
+    fetch.mockResolvedValueOnce(new Response(Buffer.from("invalid speech response")));
+
+    await expect(provider.synthesize(input)).rejects.toMatchObject({
+      code: "INVALID_REQUEST",
+      retryable: false,
+      provider: "openai",
+      message: "Invalid WAV response",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(mockSynthesize).not.toHaveBeenCalled();
+  });
+});
