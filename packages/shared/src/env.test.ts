@@ -25,9 +25,7 @@ describe("TTS startup configuration", () => {
   });
 
   it("allows explicit mock even when real-provider configuration is absent", () => {
-    expect(loadEnv({ ...baseConfig, AI_TTS_PROVIDER: "mock" }).AI_TTS_PROVIDER).toBe(
-      "mock",
-    );
+    expect(loadEnv({ ...baseConfig, AI_TTS_PROVIDER: "mock" }).AI_TTS_PROVIDER).toBe("mock");
   });
 
   it("accepts a complete OpenAI TTS configuration", () => {
