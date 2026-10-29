@@ -13,6 +13,7 @@ import {
   toWebVtt,
   renderScenes,
 } from "@contentforge/media";
+import { OPENAI_TTS_NOT_WIRED_MESSAGE } from "@contentforge/shared";
 import { z } from "zod";
 
 import { PermanentTaskError, type TaskRegistry } from "./executor";
@@ -136,11 +137,15 @@ export const mediaHandlers: TaskRegistry = {
   },
   "generation.voice": {
     async execute(task, signal) {
-      const { payload, script, variant, storage } = await loadProduction(task, signal);
-      if ((process.env.AI_TTS_PROVIDER ?? "mock") !== "mock")
+      // Guard before DB access: direct invocations also fail clearly, never mock.
+      const selected = process.env.AI_TTS_PROVIDER ?? "mock";
+      if (selected !== "mock")
         throw new PermanentTaskError(
-          "Voice provider setup required; configure mock for the reference tone",
+          selected === "openai"
+            ? OPENAI_TTS_NOT_WIRED_MESSAGE
+            : "Unsupported TTS provider; use AI_TTS_PROVIDER=mock until D04",
         );
+      const { payload, script, variant, storage } = await loadProduction(task, signal);
       await runStep(
         task,
         signal,
