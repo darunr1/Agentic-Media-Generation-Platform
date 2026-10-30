@@ -52,22 +52,22 @@ describe("speech audio preparation", () => {
   });
 
   it("converts compressed MP3 speech into the same WAV render format", async () => {
-    const encoded = spawnSync(
-      process.env.FFMPEG_PATH ?? ffmpegPath ?? "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "wav",
-        "-i",
-        "pipe:0",
-        "-f",
-        "mp3",
-        "pipe:1",
-      ],
-      { input: sampleWav(), maxBuffer: 1024 * 1024 },
-    );
+    const mp3Args = [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "wav",
+      "-i",
+      "pipe:0",
+      "-f",
+      "mp3",
+      "pipe:1",
+    ];
+    const encoded = spawnSync(process.env.FFMPEG_PATH ?? ffmpegPath ?? "ffmpeg", mp3Args, {
+      input: sampleWav(),
+      maxBuffer: 1024 * 1024,
+    });
     expect(encoded.status).toBe(0);
     expect(encoded.stdout.byteLength).toBeGreaterThan(0);
     const prepared = await prepareSpeechAudioForRender({
@@ -105,10 +105,7 @@ describe("speech audio preparation", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      prepareSpeechAudioForRender(
-        { bytes: sampleWav(), mimeType: "audio/wav" },
-        controller.signal,
-      ),
+      prepareSpeechAudioForRender({ bytes: sampleWav(), mimeType: "audio/wav" }, controller.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
   });
 });
