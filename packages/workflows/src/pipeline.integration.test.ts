@@ -387,7 +387,7 @@ describe("PostgreSQL worker and media pipeline", () => {
     const track = await prisma.voiceTrack.findFirst({ where: { generationJobId: `${run.id}-50` } });
     if (outcome === "failure") {
       expect(track).toBeNull();
-      expect(await prisma.workflowRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: "FAILED" });
+      expect(await prisma.workflowRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: "DEAD_LETTER" });
       expect(await prisma.renderedAsset.count({ where })).toBe(0);
       return;
     }
