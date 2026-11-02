@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import type * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,7 +18,7 @@ const fileHooks = vi.hoisted(() => ({
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const actual = await importOriginal<typeof fsPromises>();
   return {
     ...actual,
     mkdtemp: async (prefix: string) => {
@@ -111,18 +112,7 @@ describe("speech audio preparation", () => {
   it("converts compressed MP3 speech into the same WAV render format", async () => {
     const encoded = spawnSync(
       process.env.FFMPEG_PATH ?? ffmpegPath ?? "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "wav",
-        "-i",
-        "pipe:0",
-        "-f",
-        "mp3",
-        "pipe:1",
-      ],
+      ["-hide_banner", "-loglevel", "error", "-f", "wav", "-i", "pipe:0", "-f", "mp3", "pipe:1"],
       { input: sampleWav(), maxBuffer: 1024 * 1024 },
     );
     expect(encoded.status).toBe(0);
@@ -221,9 +211,12 @@ describe("speech audio preparation", () => {
           { bytes: sampleWav(), mimeType: "audio/wav" },
           controller.signal,
         );
-        await vi.waitFor(async () => {
-          await stat(ready);
-        }, { timeout: 10_000, interval: 20 });
+        await vi.waitFor(
+          async () => {
+            await stat(ready);
+          },
+          { timeout: 10_000, interval: 20 },
+        );
         controller.abort();
         await expect(conversion).rejects.toMatchObject({ name: "AbortError" });
         await expectAudioTempCleaned();
