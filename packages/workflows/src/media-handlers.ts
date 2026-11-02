@@ -33,6 +33,13 @@ function normalizedDuration(bytes: Uint8Array) {
   throw new Error("Normalized speech has no PCM audio");
 }
 
+function voiceForRun(script: { voiceTracks: Array<{ storageKey: string; durationSeconds: number }> }, task: QueueTask) {
+  const prefix = `${task.workspaceId}/${task.workflowRunId}/`;
+  const track = script.voiceTracks.find((candidate) => candidate.storageKey.startsWith(prefix));
+  if (!track) throw new PermanentTaskError("Current workflow voice track unavailable");
+  return track;
+}
+
 async function loadProduction(task: QueueTask, signal: AbortSignal) {
   const payload = await loadTask(task, signal);
   if ((process.env.STORAGE_PROVIDER ?? "local") !== "local")
@@ -227,9 +234,10 @@ export const mediaHandlers: TaskRegistry = {
         "CaptionGeneration",
         z.object({ tracks: z.array(z.string()) }),
         async () => {
-          const cues = script.scenes.map((s) => ({
+          const speech = voiceForRun(script, task);
+          const cues = script.scenes.map((s, index) => ({
             startSeconds: s.startTimeMs / 1000,
-            endSeconds: s.endTimeMs / 1000,
+            endSeconds: index === script.scenes.length - 1 ? Math.max(s.endTimeMs / 1000, speech.durationSeconds) : s.endTimeMs / 1000,
             text: s.narration,
           }));
           const tracks: string[] = [];
@@ -325,8 +333,8 @@ export const renderHandlers: TaskRegistry = {
                 costCents: 0,
               },
             };
+          const speech = voiceForRun(script, task);
           if (
-            !script.voiceTracks[0] ||
             !script.captionTracks.length ||
             script.scenes.some((s) => !s.mediaAsset)
           )
@@ -338,14 +346,14 @@ export const renderHandlers: TaskRegistry = {
           const rendered = await renderScenes(
             {
               scenes: await Promise.all(
-                script.scenes.map(async (s) => ({
+                script.scenes.map(async (s, index) => ({
                   bytes: await storage.get(s.mediaAsset!.storageKey),
-                  durationSeconds: (s.endTimeMs - s.startTimeMs) / 1000,
+                  durationSeconds: (s.endTimeMs - s.startTimeMs) / 1000 + (index === script.scenes.length - 1 ? Math.max(0, speech.durationSeconds - s.endTimeMs / 1000) : 0),
                   text: s.onScreenText ?? "",
                   caption: s.narration,
                 })),
               ),
-              audio: await storage.get(script.voiceTracks[0].storageKey),
+              audio: await storage.get(speech.storageKey),
               width: 360,
               height: 640,
               timeoutMs: Number(process.env.RENDER_TIMEOUT_MS ?? 120_000),
