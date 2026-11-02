@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -5,7 +6,7 @@ import { join } from "node:path";
 
 import { prisma, PrismaClient } from "@contentforge/database";
 import { LocalObjectStorageProvider } from "@contentforge/media";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { startGeneration, cancelWorkflow } from "./enqueue";
 import { executeNextTask, PermanentTaskError } from "./executor";
@@ -39,6 +40,10 @@ describe("PostgreSQL worker and media pipeline", () => {
     idempotencyKey: randomUUID(),
     attempt: 0,
     maxAttempts: 2,
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), "contentforge-integration-media-"));
@@ -195,6 +200,7 @@ describe("PostgreSQL worker and media pipeline", () => {
     await queue.acknowledge(second);
   });
   it("runs strategy → ideas → script/critique → media/MP4 → approval → scheduled mock publish → analytics", async () => {
+    vi.stubEnv("AI_TTS_PROVIDER", "mock");
     const strategyInput = {
       workspaceId,
       userId,
@@ -250,6 +256,7 @@ describe("PostgreSQL worker and media pipeline", () => {
     const bytes = await new LocalObjectStorageProvider(storageRoot).get(rendered.storageKey);
     expect(Buffer.from(bytes).toString("ascii", 4, 8)).toBe("ftyp");
     expect(bytes.length).toBeGreaterThan(10000);
+    expect(await prisma.voiceTrack.findFirstOrThrow({ where: { generationJobId: `${production.id}-50` } })).toMatchObject({ providerName: "mock", voiceId: "reference-tone" });
     expect(
       await prisma.mediaAsset.count({
         where: {
@@ -330,6 +337,75 @@ describe("PostgreSQL worker and media pipeline", () => {
     );
     expect(await prisma.publishedPost.count({ where: { publishJobId: scheduled.job.id } })).toBe(1);
     expect(await prisma.analyticsSnapshot.count({ where: { workspaceId } })).toBe(1);
+  });
+  it.each(["success", "failure"] as const)("renders only successful provider responses (%s)", async (outcome) => {
+    vi.stubEnv("AI_TTS_PROVIDER", "openai");
+    vi.stubEnv("OPENAI_API_KEY", "offline-test-key");
+    vi.stubEnv("OPENAI_TTS_MODEL", "tts-test");
+    vi.stubEnv("OPENAI_TTS_VOICE", "alloy");
+
+    // A one-second PCM marker with two distinct frequencies tests identity across AAC encoding.
+    const rate = 24000;
+    const marker = (i: number) => Math.sin(2 * Math.PI * (i < rate / 2 ? 733 : 1291) * i / rate);
+    const wav = Buffer.alloc(44 + rate * 2);
+    wav.write("RIFF");
+    wav.writeUInt32LE(wav.length - 8, 4);
+    wav.write("WAVEfmt ", 8);
+    wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(rate, 24);
+    wav.writeUInt32LE(rate * 2, 28);
+    wav.writeUInt16LE(2, 32);
+    wav.writeUInt16LE(16, 34);
+    wav.write("data", 36);
+    wav.writeUInt32LE(rate * 2, 40);
+    for (let i = 0; i < rate; i++) wav.writeInt16LE(Math.round(10000 * marker(i)), 44 + i * 2);
+    const speech = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      outcome === "success"
+        ? new Response(new Uint8Array(wav), { headers: { "Content-Type": "audio/wav" } })
+        : new Response('{"error":{"message":"invalid speech request"}}', { status: 400 }),
+    );
+
+    const idea = await prisma.contentIdea.create({ data: {
+      workspaceId, campaignId, title: "Brew better coffee", targetPlatform: "MOCK",
+      format: "SHORT_VIDEO_9X16", hook: "Try fresh beans", audienceProblem: "Weak coffee",
+      mainTakeaway: "Grind fresh", callToAction: "Try it", productionDifficulty: "LOW",
+      requiredAssets: [], noveltyExplanation: "Audio integration fixture",
+    } });
+    const content = await prisma.contentItem.create({ data: {
+      workspaceId, campaignId, brandId, contentIdeaId: idea.id, title: idea.title,
+      primaryFormat: idea.format, createdByUserId: userId,
+    } });
+    const run = await startGeneration({ workspaceId, userId, contentItemId: content.id,
+      operation: "script", idempotencyKey: `speech-${outcome}` });
+    for (let i = 0; i < 5; i++) {
+      if (!await executeNextTask(queue, registry, { onFailure: recordTaskFailure })) break;
+    }
+    expect(speech).toHaveBeenCalledTimes(1);
+    const where = { renderJob: { workspaceId, contentVariant: { contentItemId: content.id } } };
+    const track = await prisma.voiceTrack.findFirst({ where: { generationJobId: `${run.id}-50` } });
+    if (outcome === "failure") {
+      expect(track).toBeNull();
+      expect(await prisma.workflowRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: "FAILED" });
+      expect(await prisma.renderedAsset.count({ where })).toBe(0);
+      return;
+    }
+    expect(track).toMatchObject({ providerName: "openai", voiceId: "alloy", durationSeconds: 1 });
+    const video = await prisma.renderedAsset.findFirstOrThrow({ where });
+    const pcm = execFileSync(process.env.FFMPEG_PATH ?? "ffmpeg", [
+      "-v", "error", "-i", join(storageRoot, video.storageKey), "-map", "0:a:0",
+      "-t", "1", "-ar", String(rate), "-ac", "1", "-f", "s16le", "pipe:1",
+    ]);
+    expect(pcm.length).toBe(rate * 2);
+    let dot = 0, actualEnergy = 0, expectedEnergy = 0;
+    for (let i = 0; i < rate; i++) {
+      const sample = pcm.readInt16LE(i * 2), expected = marker(i);
+      dot += sample * expected;
+      actualEnergy += sample * sample;
+      expectedEnergy += expected * expected;
+    }
+    expect(dot / Math.sqrt(actualEnergy * expectedEnergy)).toBeGreaterThan(0.95);
   });
   it("cancels a persisted workflow and rejects cross-workspace cancellation", async () => {
     const run = await startGeneration({
