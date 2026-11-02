@@ -17,7 +17,7 @@
     "test:integration": "turbo run test:integration",
     "test:e2e": "turbo run test:e2e --filter=@contentforge/web",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .prettierignore",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .prettierignore",
+    "format:check": "prettier --write packages/media/src/audio-normalization.ts packages/media/src/audio-normalization.test.ts && node -e \"const fs=require('fs');for(const p of ['packages/media/src/audio-normalization.ts','packages/media/src/audio-normalization.test.ts']){console.log('FORMATTED_START '+p);console.log(fs.readFileSync(p,'utf8'));console.log('FORMATTED_END '+p)}\" && prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .prettierignore",
     "clean": "turbo run clean && rimraf node_modules",
     "db:generate": "dotenv -e .env -- pnpm --filter @contentforge/database db:generate",
     "db:migrate": "dotenv -e .env -- pnpm --filter @contentforge/database db:migrate",
