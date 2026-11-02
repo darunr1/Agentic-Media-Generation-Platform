@@ -15,10 +15,7 @@ const AUDIO_CHANNELS = 1;
 const PCM_BYTES_PER_SAMPLE = 2;
 const WAV_HEADER_SLACK_BYTES = 4 * 1024;
 const MAX_WAV_OUTPUT_BYTES =
-  MAX_RENDER_AUDIO_SECONDS *
-    AUDIO_SAMPLE_RATE_HZ *
-    AUDIO_CHANNELS *
-    PCM_BYTES_PER_SAMPLE +
+  MAX_RENDER_AUDIO_SECONDS * AUDIO_SAMPLE_RATE_HZ * AUDIO_CHANNELS * PCM_BYTES_PER_SAMPLE +
   WAV_HEADER_SLACK_BYTES;
 
 /**
@@ -80,8 +77,7 @@ export async function prepareSpeechAudioForRender(
 
     // Inspect the on-disk size before allocating a Buffer for decoded PCM.
     const { size } = await stat(target);
-    if (size > MAX_WAV_OUTPUT_BYTES)
-      throw new Error("Speech audio exceeds render duration limit");
+    if (size > MAX_WAV_OUTPUT_BYTES) throw new Error("Speech audio exceeds render duration limit");
 
     const bytes = await readFile(target, { signal });
     signal?.throwIfAborted();
