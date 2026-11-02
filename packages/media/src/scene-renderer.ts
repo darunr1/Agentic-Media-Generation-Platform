@@ -90,6 +90,8 @@ export async function renderScenes(
       "24",
       "-pix_fmt",
       "yuv420p",
+      "-af",
+      "apad",
       "-c:a",
       "aac",
       "-movflags",
