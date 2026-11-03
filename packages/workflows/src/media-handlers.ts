@@ -26,8 +26,7 @@ function normalizedDuration(bytes: Uint8Array) {
   for (let offset = 12; offset + 8 <= wav.length;) {
     const size = wav.readUInt32LE(offset + 4);
     if (offset + 8 + size > wav.length) break;
-    if (wav.toString("ascii", offset, offset + 4) === "data" && size > 0)
-      return size / (48000 * 2);
+    if (wav.toString("ascii", offset, offset + 4) === "data" && size > 0) return size / (48000 * 2);
     offset += 8 + size + (size % 2);
   }
   throw new Error("Normalized speech has no PCM audio");
@@ -161,7 +160,27 @@ export const mediaHandlers: TaskRegistry = {
         async () => {
           const plannedSeconds = (script.scenes.at(-1)?.endTimeMs ?? 24000) / 1000;
           const mock = provider.name === "mock";
-          const voice = mock ? "reference-tone" : process.env.OPENAI_TTS_VOICE!.trim();
+          const voice = mock ? "reference-tone" : process.env.OPENAI_TTS_VOICE?.trim();
+          if (!voice) throw new PermanentTaskError("OpenAI speech requires OPENAI_TTS_VOICE");
+          // A lease may expire after the assets commit but before runStep saves its output.
+          const saved = await prisma.voiceTrack.findFirst({
+            where: { scriptId: script.id, generationJobId: `${task.workflowRunId}-50` },
+          });
+          if (saved) {
+            const asset = await prisma.mediaAsset.findFirstOrThrow({
+              where: { workspaceId: task.workspaceId, storageKey: saved.storageKey },
+            });
+            return {
+              data: { storageKey: saved.storageKey, durationSeconds: saved.durationSeconds },
+              usage: {
+                provider: saved.providerName,
+                model: asset.model ?? "unknown",
+                costCents: saved.costCents ?? 0,
+                costKnown: saved.costCents !== null,
+                durationMs: 0,
+              },
+            };
+          }
           const request = {
             text: script.narration,
             voice,
@@ -169,10 +188,14 @@ export const mediaHandlers: TaskRegistry = {
             durationSeconds: plannedSeconds,
           };
           const result = await provider.synthesize(request);
-          const bytes = mock ? result.data.bytes : await prepareSpeechAudioForRender(result.data, signal);
+          const bytes = mock
+            ? result.data.bytes
+            : await prepareSpeechAudioForRender(result.data, signal);
           const durationSeconds = mock ? plannedSeconds : normalizedDuration(bytes);
           signal.throwIfAborted();
-          const filename = mock ? "voice.wav" : `voice-${createHash("sha256").update(bytes).digest("hex")}.wav`;
+          const filename = mock
+            ? "voice.wav"
+            : `voice-${createHash("sha256").update(bytes).digest("hex")}.wav`;
           const key = `${task.workspaceId}/${task.workflowRunId}/${filename}`;
           const object = await storage.put(key, bytes, "audio/wav");
           await fencedTransaction(task, signal, async (tx) => {
