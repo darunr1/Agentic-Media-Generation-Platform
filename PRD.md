@@ -22,11 +22,11 @@ For the first release, success is not the number of AI agents or integrations. S
 
 ## 3. Target users
 
-| Persona | Need | First-beta job to be done |
-| --- | --- | --- |
-| Small-business owner | Create marketing content with limited time | Turn a business idea into a ready-to-download short video |
-| Student founder or solo marketer | Produce consistent social content with minimal tools | Generate and refine a video without separate script and editing apps |
-| Small agency operator (later) | Manage several brands and approvals | Use separate workspaces and review activity; agency-scale workflows can follow |
+| Persona                          | Need                                                 | First-beta job to be done                                                      |
+| -------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Small-business owner             | Create marketing content with limited time           | Turn a business idea into a ready-to-download short video                      |
+| Student founder or solo marketer | Produce consistent social content with minimal tools | Generate and refine a video without separate script and editing apps           |
+| Small agency operator (later)    | Manage several brands and approvals                  | Use separate workspaces and review activity; agency-scale workflows can follow |
 
 Primary pilot audience: local service businesses, cafés, restaurants, and student-run businesses. The team should validate which segment gets the most value rather than trying to serve every industry at launch.
 
@@ -34,14 +34,14 @@ Primary pilot audience: local service businesses, cafés, restaurants, and stude
 
 These are proposed targets for the first private beta, not current results.
 
-| Goal | Proposed success measure |
-| --- | --- |
-| Deliver an end-to-end narrated video | Generate an MP4 with audible speech and readable captions in the staging environment |
-| Make the workflow approachable | At least 3 external testers attempt the workflow without a developer operating the UI |
-| Prove repeated use | At least 2 successful exports per tester, for 6 total pilot exports |
-| Establish baseline reliability | At least 80% of pilot generation attempts complete successfully; report the actual denominator |
-| Gather useful product feedback | Record completion problems, perceived video quality, and willingness to use again from each tester |
-| Keep operations manageable | Document setup, service restart, backup/restore, and per-generation provider spend where known |
+| Goal                                 | Proposed success measure                                                                           |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Deliver an end-to-end narrated video | Generate an MP4 with audible speech and readable captions in the staging environment               |
+| Make the workflow approachable       | At least 3 external testers attempt the workflow without a developer operating the UI              |
+| Prove repeated use                   | At least 2 successful exports per tester, for 6 total pilot exports                                |
+| Establish baseline reliability       | At least 80% of pilot generation attempts complete successfully; report the actual denominator     |
+| Gather useful product feedback       | Record completion problems, perceived video quality, and willingness to use again from each tester |
+| Keep operations manageable           | Document setup, service restart, backup/restore, and per-generation provider spend where known     |
 
 Measure time from starting a campaign to first playable video, and separately measure time spent waiting for generation. Do not promise a fixed rendering speed before measuring it.
 
@@ -49,19 +49,19 @@ Measure time from starting a campaign to first playable video, and separately me
 
 The current main branch and repository documentation indicate:
 
-| Area | Current status |
-| --- | --- |
-| Web application and workspace model | **Implemented:** Next.js, authentication, workspace roles, brand and campaign pages |
-| Content strategy and ideation | **Implemented:** multi-agent generation, validation, idea review/selection |
-| Scripts and approval | **Implemented:** script/scene editing, comments, version snapshots, approval gate |
-| Queue and orchestration | **Implemented:** persisted PostgreSQL tasks, retries, leases, cancellation, worker and renderer services |
-| Video rendering | **Implemented locally:** FFmpeg composition into playable 9:16 MP4 files with captions |
-| Text and image generation | **Implemented adapters:** mock providers; optional OpenAI/Gemini text and OpenAI image providers with configuration |
-| Narration | **Not yet complete:** the existing mock voice is a WAV reference tone, not human speech |
-| Social publishing | **Mock only:** real platform OAuth, posting, and analytics still require integrations and approvals |
-| Image/file upload | **Not yet complete:** local browser upload support is not a finished user feature |
-| Hosting | **Not yet deployed in the documented implementation:** Docker and Terraform exist, but production deployment needs setup and verification |
-| Billing | **Not yet complete:** plan rules exist; real Stripe checkout/webhook lifecycle is not active |
+| Area                                | Current status                                                                                                                            |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Web application and workspace model | **Implemented:** Next.js, authentication, workspace roles, brand and campaign pages                                                       |
+| Content strategy and ideation       | **Implemented:** multi-agent generation, validation, idea review/selection                                                                |
+| Scripts and approval                | **Implemented:** script/scene editing, comments, version snapshots, approval gate                                                         |
+| Queue and orchestration             | **Implemented:** persisted PostgreSQL tasks, retries, leases, cancellation, worker and renderer services                                  |
+| Video rendering                     | **Implemented locally:** FFmpeg composition into playable 9:16 MP4 files with captions                                                    |
+| Text and image generation           | **Implemented adapters:** mock providers; optional OpenAI/Gemini text and OpenAI image providers with configuration                       |
+| Narration                           | **Not yet complete:** the existing mock voice is a WAV reference tone, not human speech                                                   |
+| Social publishing                   | **Mock only:** real platform OAuth, posting, and analytics still require integrations and approvals                                       |
+| Image/file upload                   | **Not yet complete:** local browser upload support is not a finished user feature                                                         |
+| Hosting                             | **Not yet deployed in the documented implementation:** Docker and Terraform exist, but production deployment needs setup and verification |
+| Billing                             | **Not yet complete:** plan rules exist; real Stripe checkout/webhook lifecycle is not active                                              |
 
 This baseline is based on source and documentation review, not a fresh successful deployment or full test run. Recheck against merged PRs before marking any planned feature as shipped.
 
@@ -193,12 +193,12 @@ Priority definitions: **P0** is necessary for a functional private beta. **P1** 
 
 This is the feature sequence, not a rigid number-of-commits requirement. Work can be divided into focused pull requests.
 
-| Phase | Darun | Teju | Exit condition |
-| --- | --- | --- | --- |
-| 1. Foundation | TTS provider, configuration, and tests | Repo hygiene, local Docker setup | Reproducible demo and provider contract |
-| 2. Core video | Connect speech to workflow and FFmpeg, test narration | Secure upload validation and API | Narrated MP4 works locally |
-| 3. Beta UX | Progress states, preview, exports, uploader UI | Staging runtime, authentication, backups | End-to-end private beta URL works |
-| 4. Pilot | Onboarding, tester sessions, feedback | Reliability tests and fixes | Three users test and findings are documented |
+| Phase         | Darun                                                 | Teju                                     | Exit condition                               |
+| ------------- | ----------------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| 1. Foundation | TTS provider, configuration, and tests                | Repo hygiene, local Docker setup         | Reproducible demo and provider contract      |
+| 2. Core video | Connect speech to workflow and FFmpeg, test narration | Secure upload validation and API         | Narrated MP4 works locally                   |
+| 3. Beta UX    | Progress states, preview, exports, uploader UI        | Staging runtime, authentication, backups | End-to-end private beta URL works            |
+| 4. Pilot      | Onboarding, tester sessions, feedback                 | Reliability tests and fixes              | Three users test and findings are documented |
 
 Use small PRs against **main**. Review each other's changes and merge only after relevant checks pass. The separate [development plan](https://docs.google.com/document/d/13TYCROms2jgiQEsm3eRoHIDZBdTVvc0fCiEy7cEv1Sg/edit) contains a suggested task-by-task order.
 
@@ -234,15 +234,15 @@ These may be reconsidered after users consistently produce and export valuable v
 
 ## 12. Main risks and decisions
 
-| Risk | Impact | Proposed response |
-| --- | --- | --- |
-| TTS API failures or unexpected costs | Broken videos, unbounded expense | Mocked CI, explicit real-provider selection, error handling, observed usage |
-| Narration duration differs from scene plan | Awkward pacing or truncated audio | Check duration and define a consistent audio/render timing policy |
-| Local file storage does not work across services | Missing media or failed previews | Shared persistent storage and an end-to-end container test |
-| Staging service shuts down between jobs | Stuck workflow tasks | Use persistent worker/renderer compute and test restart recovery |
-| Users get lost in the generation steps | Poor activation | Short onboarding checklist and real usability tests |
-| Uploads bypass workspace boundaries | Cross-tenant exposure | Permission checks, ownership validation, negative security tests |
-| Too much scope before launch | No usable beta | Focus on real voice, reliable render, export, and first testers |
+| Risk                                             | Impact                            | Proposed response                                                           |
+| ------------------------------------------------ | --------------------------------- | --------------------------------------------------------------------------- |
+| TTS API failures or unexpected costs             | Broken videos, unbounded expense  | Mocked CI, explicit real-provider selection, error handling, observed usage |
+| Narration duration differs from scene plan       | Awkward pacing or truncated audio | Check duration and define a consistent audio/render timing policy           |
+| Local file storage does not work across services | Missing media or failed previews  | Shared persistent storage and an end-to-end container test                  |
+| Staging service shuts down between jobs          | Stuck workflow tasks              | Use persistent worker/renderer compute and test restart recovery            |
+| Users get lost in the generation steps           | Poor activation                   | Short onboarding checklist and real usability tests                         |
+| Uploads bypass workspace boundaries              | Cross-tenant exposure             | Permission checks, ownership validation, negative security tests            |
+| Too much scope before launch                     | No usable beta                    | Focus on real voice, reliable render, export, and first testers             |
 
 ## 13. Open questions
 

@@ -287,4 +287,5 @@ export function verifyStorageSignature(
     return false;
   }
 }
+export * from "./audio-normalization";
 export * from "./scene-renderer";

@@ -1,12 +1,16 @@
 import { z } from "zod";
 
+/** D03: the selector exists, but the production voice worker remains mock-only until D04. */
+export const OPENAI_TTS_NOT_WIRED_MESSAGE =
+  "AI_TTS_PROVIDER=openai is not supported by the production pipeline yet: real OpenAI TTS is not wired into generation.voice; use AI_TTS_PROVIDER=mock until D04.";
+
 /**
  * Every environment variable the platform reads, in one place, validated at
  * process startup (imported at the top of each app's entrypoint). Failing
  * fast here is the "secret validation at startup" requirement — a
  * misconfigured deploy should never boot far enough to serve traffic.
  */
-const envSchema = z.object({
+const baseEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_URL: z.string().url().default("http://localhost:3000"),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -45,12 +49,14 @@ const envSchema = z.object({
   AI_TEXT_PROVIDER: z.enum(["mock", "openai", "gemini"]).default("mock"),
   AI_IMAGE_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AI_VIDEO_PROVIDER: z.enum(["mock"]).default("mock"),
-  AI_TTS_PROVIDER: z.enum(["mock", "elevenlabs"]).default("mock"),
+  AI_TTS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AI_TRANSCRIPTION_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AI_FALLBACK_PROVIDER: z.enum(["openai", "gemini"]).optional(),
   AI_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(45000),
   OPENAI_TEXT_MODEL: z.string().optional(),
   OPENAI_IMAGE_MODEL: z.string().optional(),
+  OPENAI_TTS_MODEL: z.string().optional(),
+  OPENAI_TTS_VOICE: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_TEXT_MODEL: z.string().optional(),
   OPENAI_INPUT_CENTS_PER_MILLION: z.coerce.number().nonnegative().optional(),
@@ -94,6 +100,24 @@ const envSchema = z.object({
 
   // --- Observability -----------------------------------------------------------
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+});
+
+const envSchema = baseEnvSchema.superRefine((config, ctx) => {
+  if (config.AI_TTS_PROVIDER !== "openai") return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["AI_TTS_PROVIDER"],
+    message: OPENAI_TTS_NOT_WIRED_MESSAGE,
+  });
+  for (const key of ["OPENAI_API_KEY", "OPENAI_TTS_MODEL", "OPENAI_TTS_VOICE"] as const) {
+    if (!config[key]?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} is required when AI_TTS_PROVIDER=openai`,
+      });
+    }
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -8,3 +8,5 @@ export * from "./providers/openai/text";
 export * from "./providers/gemini/text";
 export * from "./providers/mock/media";
 export * from "./providers/openai/image";
+export * from "./providers/openai/tts";
+export * from "./providers/tts";
