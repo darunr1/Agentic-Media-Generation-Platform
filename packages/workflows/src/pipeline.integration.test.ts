@@ -410,8 +410,33 @@ describe("PostgreSQL worker and media pipeline", () => {
         operation: "script",
         idempotencyKey: `speech-${outcome}`,
       });
-      for (let i = 0; i < 5; i++) {
-        if (!(await executeNextTask(queue, registry, { onFailure: recordTaskFailure }))) break;
+      async function executeType(type: string) {
+        const handler = registry[type];
+        if (!handler) throw new Error(`Missing test handler for ${type}`);
+        expect(
+          await executeNextTask(queue, { [type]: handler }, { onFailure: recordTaskFailure }),
+        ).toBe(true);
+      }
+      for (const type of ["generation.script", "generation.assets", "generation.voice"] as const) {
+        await executeType(type);
+      }
+      if (outcome === "success") {
+        // Simulate lease loss after the voice and asset commit, before the step checkpoint.
+        const where = { workflowRunId: run.id, type: "generation.voice" };
+        await prisma.queuedTask.updateMany({
+          where,
+          data: { status: "RUNNING", leaseExpiresAt: new Date(0) },
+        });
+        await prisma.workflowStep.updateMany({
+          where: { workflowRunId: run.id, sequenceNumber: 50 },
+          data: { status: "RUNNING" },
+        });
+        for (const type of ["generation.voice", "generation.captions", "render.video"] as const) {
+          await executeType(type);
+        }
+        expect(await prisma.voiceTrack.count({ where: { generationJobId: `${run.id}-50` } })).toBe(
+          1,
+        );
       }
       expect(speech).toHaveBeenCalledTimes(1);
       const where = { renderJob: { workspaceId, contentVariant: { contentItemId: content.id } } };
