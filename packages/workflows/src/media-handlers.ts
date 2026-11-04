@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import {
   MockImageGenerationProvider,
   OpenAIImageGenerationProvider,
-  MockTextToSpeechProvider,
+  createTtsProvider,
 } from "@contentforge/ai";
 import { prisma } from "@contentforge/database";
 import {
@@ -11,14 +11,26 @@ import {
   localStorageRoot,
   toSrt,
   toWebVtt,
+  prepareSpeechAudioForRender,
   renderScenes,
 } from "@contentforge/media";
-import { OPENAI_TTS_NOT_WIRED_MESSAGE } from "@contentforge/shared";
 import { z } from "zod";
 
 import { PermanentTaskError, type TaskRegistry } from "./executor";
 import type { QueueTask } from "./queue";
 import { advance, fencedTransaction, loadTask, runStep } from "./runtime";
+
+// FFmpeg may write metadata chunks between fmt and data in normalized PCM16 WAV.
+function normalizedDuration(bytes: Uint8Array) {
+  const wav = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let offset = 12; offset + 8 <= wav.length;) {
+    const size = wav.readUInt32LE(offset + 4);
+    if (offset + 8 + size > wav.length) break;
+    if (wav.toString("ascii", offset, offset + 4) === "data" && size > 0) return size / (48000 * 2);
+    offset += 8 + size + (size % 2);
+  }
+  throw new Error("Normalized speech has no PCM audio");
+}
 
 async function loadProduction(task: QueueTask, signal: AbortSignal) {
   const payload = await loadTask(task, signal);
@@ -137,14 +149,7 @@ export const mediaHandlers: TaskRegistry = {
   },
   "generation.voice": {
     async execute(task, signal) {
-      // Guard before DB access: direct invocations also fail clearly, never mock.
-      const selected = process.env.AI_TTS_PROVIDER ?? "mock";
-      if (selected !== "mock")
-        throw new PermanentTaskError(
-          selected === "openai"
-            ? OPENAI_TTS_NOT_WIRED_MESSAGE
-            : "Unsupported TTS provider; use AI_TTS_PROVIDER=mock until D04",
-        );
+      const provider = createTtsProvider();
       const { payload, script, variant, storage } = await loadProduction(task, signal);
       await runStep(
         task,
@@ -153,15 +158,46 @@ export const mediaHandlers: TaskRegistry = {
         "VoiceGeneration",
         z.object({ storageKey: z.string(), durationSeconds: z.number() }),
         async () => {
-          const durationSeconds = (script.scenes.at(-1)?.endTimeMs ?? 24000) / 1000;
-          const key = `${task.workspaceId}/${task.workflowRunId}/voice.wav`;
-          const result = await new MockTextToSpeechProvider().synthesize({
-            text: script.narration,
-            voice: "reference-tone",
-            idempotencyKey: task.idempotencyKey,
-            durationSeconds,
+          const plannedSeconds = (script.scenes.at(-1)?.endTimeMs ?? 24000) / 1000;
+          const mock = provider.name === "mock";
+          const voice = mock ? "reference-tone" : process.env.OPENAI_TTS_VOICE?.trim();
+          if (!voice) throw new PermanentTaskError("OpenAI speech requires OPENAI_TTS_VOICE");
+          // A lease may expire after the assets commit but before runStep saves its output.
+          const saved = await prisma.voiceTrack.findFirst({
+            where: { scriptId: script.id, generationJobId: `${task.workflowRunId}-50` },
           });
-          const object = await storage.put(key, result.data.bytes, result.data.mimeType);
+          if (saved) {
+            const asset = await prisma.mediaAsset.findFirstOrThrow({
+              where: { workspaceId: task.workspaceId, storageKey: saved.storageKey },
+            });
+            return {
+              data: { storageKey: saved.storageKey, durationSeconds: saved.durationSeconds },
+              usage: {
+                provider: saved.providerName,
+                model: asset.model ?? "unknown",
+                costCents: saved.costCents ?? 0,
+                costKnown: saved.costCents !== null,
+                durationMs: 0,
+              },
+            };
+          }
+          const request = {
+            text: script.narration,
+            voice,
+            idempotencyKey: task.idempotencyKey,
+            durationSeconds: plannedSeconds,
+          };
+          const result = await provider.synthesize(request);
+          const bytes = mock
+            ? result.data.bytes
+            : await prepareSpeechAudioForRender(result.data, signal);
+          const durationSeconds = mock ? plannedSeconds : normalizedDuration(bytes);
+          signal.throwIfAborted();
+          const filename = mock
+            ? "voice.wav"
+            : `voice-${createHash("sha256").update(bytes).digest("hex")}.wav`;
+          const key = `${task.workspaceId}/${task.workflowRunId}/${filename}`;
+          const object = await storage.put(key, bytes, "audio/wav");
           await fencedTransaction(task, signal, async (tx) => {
             if (await tx.voiceTrack.findFirst({ where: { scriptId: script.id, storageKey: key } }))
               return;
@@ -170,9 +206,9 @@ export const mediaHandlers: TaskRegistry = {
                 scriptId: script.id,
                 storageKey: key,
                 durationSeconds,
-                providerName: "mock",
-                voiceId: "reference-tone",
-                costCents: 0,
+                providerName: result.usage.provider,
+                voiceId: voice,
+                costCents: result.usage.costKnown === false ? null : result.usage.costCents,
                 generationJobId: `${task.workflowRunId}-50`,
               },
             });
@@ -187,13 +223,13 @@ export const mediaHandlers: TaskRegistry = {
                 sizeBytes: object.sizeBytes,
                 checksumSha256: object.checksumSha256,
                 durationSeconds,
-                providerName: "mock",
+                providerName: result.usage.provider,
                 model: result.usage.model,
                 prompt: script.narration,
                 generatedAt: new Date(),
                 workflowRunId: task.workflowRunId,
                 generationJobId: `${task.workflowRunId}-50`,
-                providerCostCents: 0,
+                providerCostCents: result.usage.costKnown === false ? null : result.usage.costCents,
               },
             });
           });

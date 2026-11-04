@@ -1,8 +1,6 @@
 import { MockTextToSpeechProvider } from "@contentforge/ai";
-import { OPENAI_TTS_NOT_WIRED_MESSAGE } from "@contentforge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PermanentTaskError } from "./executor";
 import { mediaHandlers } from "./media-handlers";
 import type { QueueTask } from "./queue";
 
@@ -14,6 +12,7 @@ afterEach(() => {
 describe("generation.voice provider rollout guard", () => {
   it("rejects OpenAI TTS clearly without generating mock audio", async () => {
     vi.stubEnv("AI_TTS_PROVIDER", "openai");
+    vi.stubEnv("OPENAI_API_KEY", "");
     const mockSpeech = vi.spyOn(MockTextToSpeechProvider.prototype, "synthesize");
     const handler = mediaHandlers["generation.voice"];
     if (!handler) throw new Error("generation.voice handler missing");
@@ -30,8 +29,7 @@ describe("generation.voice provider rollout guard", () => {
     };
 
     const execution = handler.execute(task, new AbortController().signal);
-    await expect(execution).rejects.toBeInstanceOf(PermanentTaskError);
-    await expect(execution).rejects.toThrow(OPENAI_TTS_NOT_WIRED_MESSAGE);
+    await expect(execution).rejects.toThrow("OPENAI_API_KEY");
     expect(mockSpeech).not.toHaveBeenCalled();
   });
 });

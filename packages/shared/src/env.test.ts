@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { __resetEnvCacheForTests, loadEnv, OPENAI_TTS_NOT_WIRED_MESSAGE } from "./env";
+import { __resetEnvCacheForTests, loadEnv } from "./env";
 
 const baseConfig = {
   DATABASE_URL: "postgresql://test:test@localhost:5432/test",
@@ -28,8 +28,8 @@ describe("TTS startup configuration", () => {
     expect(loadEnv({ ...baseConfig, AI_TTS_PROVIDER: "mock" }).AI_TTS_PROVIDER).toBe("mock");
   });
 
-  it("fails at startup even with complete OpenAI credentials until D04", () => {
-    expect(() => loadEnv(realTts)).toThrow(OPENAI_TTS_NOT_WIRED_MESSAGE);
+  it("accepts complete OpenAI speech configuration", () => {
+    expect(loadEnv(realTts).AI_TTS_PROVIDER).toBe("openai");
   });
 
   it.each(["OPENAI_API_KEY", "OPENAI_TTS_MODEL", "OPENAI_TTS_VOICE"] as const)(
