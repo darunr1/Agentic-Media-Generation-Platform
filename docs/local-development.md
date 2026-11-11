@@ -63,11 +63,12 @@ pnpm install --frozen-lockfile
 docker compose up -d postgres
 docker compose ps postgres
 pnpm db:migrate
+pnpm db:generate
 pnpm db:seed
 pnpm dev
 ```
 
-Wait until `docker compose ps postgres` shows PostgreSQL **healthy** before migrating; the health check uses `pg_isready`. The root `db:migrate` script runs Prisma's `migrate deploy`, and `db:seed` loads demo fixtures. If Prisma Client has not been generated, run `pnpm db:generate` and retry; Turbo normally generates it as a dependency for `dev`.
+Wait until `docker compose ps postgres` shows PostgreSQL **healthy** before migrating; the health check uses `pg_isready`. The root `db:migrate` script runs Prisma's `migrate deploy`; `db:generate` explicitly creates Prisma Client before `db:seed` imports `@prisma/client`, and `db:seed` loads demo fixtures. This extra generation step is required for a reliable fresh clone: in GitHub CI, `@prisma/client`'s install hook warned it could not find the Prisma schema in its default locations. Do not rely on implicit postinstall generation.
 
 Keep the `pnpm dev` terminal open. It runs the Next.js web app, PostgreSQL queue worker, and FFmpeg renderer via Turbo. Open **http://localhost:3000**, sign in using **demo@contentforge.dev**, and find the email magic link printed by the **console email provider** in the terminal. Open the seeded **Riverbend Coffee Roasters** workspace and follow the [demo walkthrough](demo-script.md).
 
@@ -119,15 +120,13 @@ For an optional database UI, run `docker compose up -d adminer` and open **http:
 
 ## 6. Troubleshooting and safe cleanup
 
-| Symptom | Checks / fix |
-| --- | --- |
-| `docker compose` cannot connect | Start Docker Desktop/Engine; verify `docker info` and `docker compose version`. |
-| PostgreSQL is unhealthy / migration reports connection refused | Run `docker compose ps postgres` and `docker compose logs postgres`; wait for health. Confirm `DATABASE_URL` points to `localhost:5432` **from the host**, not `postgres:5432`. |
-| Port 5432 or 3000 is in use | Stop the conflicting local process or adjust the Compose port mapping **and matching host `DATABASE_URL`**. Do not run the full Compose app stack and host `pnpm dev` at the same time. |
-| Startup rejects an environment variable | Confirm the two locally generated secrets replaced the placeholders, and inspect `packages/shared/src/env.ts` for validation rules. |
-| Prisma Client is missing | Run `pnpm db:generate`, then rerun the failed command. |
-| Jobs remain queued / renders do not progress | Confirm **both** worker and renderer are running; inspect their terminal logs, `QUEUE_PROVIDER=postgres`, database URL, and shared `LOCAL_STORAGE_DIR`. |
-| Rendering fails to find FFmpeg | Confirm the bundled `ffmpeg-static` executable works; install FFmpeg and set `FFMPEG_PATH` if needed. |
+- **Cannot connect to Docker:** Start Docker Desktop/Engine; verify `docker info` and `docker compose version`.
+- **PostgreSQL unhealthy or migration connection refused:** Run `docker compose ps postgres` and `docker compose logs postgres`; wait for health. From the host, `DATABASE_URL` must use `localhost:5432`, not `postgres:5432`.
+- **Port 5432 or 3000 occupied:** Stop the conflicting process or change the Compose port mapping **and matching host `DATABASE_URL`**. Do not run the full Compose app stack and host `pnpm dev` simultaneously.
+- **Invalid environment configuration:** Replace both local secret placeholders and inspect `packages/shared/src/env.ts` for validation rules.
+- **Prisma Client missing:** Run `pnpm db:generate` and retry. GitHub's fresh-install CI log confirmed that the `@prisma/client` postinstall hook did not find this workspace's schema automatically.
+- **Queued jobs or stalled renders:** Confirm **both** worker and renderer run; inspect their logs, `QUEUE_PROVIDER=postgres`, `DATABASE_URL`, and shared `LOCAL_STORAGE_DIR`.
+- **FFmpeg unavailable:** Check the bundled `ffmpeg-static` executable; install FFmpeg and set `FFMPEG_PATH` if needed.
 
 Use `Ctrl+C` to stop host development processes and `docker compose stop postgres` to stop the database without deleting its data. **Do not use `docker compose down -v` unless intentionally deleting local Docker volumes**. Local media is in gitignored `.local-storage/`.
 
@@ -137,5 +136,6 @@ Use `Ctrl+C` to stop host development processes and `docker compose stop postgre
 
 - **Source-checked:** the exact `pnpm` scripts exist in the root and database `package.json` files; the `postgres` service and health check exist in `docker-compose.yml`; the web/worker/renderer `dev` scripts exist; `.env.example` documents the local defaults.
 - **CI coverage:** `.github/workflows/ci.yml` runs `pnpm install --frozen-lockfile`, migrations against a PostgreSQL service, and `docker compose config --quiet`; it also builds all three Docker images. CI is **not** a verification of this exact host-side Docker Compose startup sequence.
-- **Not executed for this documentation change:** a fresh-clone/second-machine smoke test of the six commands in section 3 and the optional full Compose stack. The available authoring environment has neither Docker nor pnpm and cannot pull the repository, so there is **no claim of a successful end-to-end local run**. No runtime failures were observed because the startup sequence could not be attempted.
+- **Observed CI installation warning:** The `@prisma/client` postinstall step reported it could not locate the Prisma schema at a default path. The prescribed `pnpm db:generate` step addresses this as a deterministic prerequisite; it has not been validated on a second machine.
+- **Not executed for this documentation change:** a fresh-clone/second-machine smoke test of the commands in section 3 and the optional full Compose stack. The available authoring environment has neither Docker nor pnpm and cannot pull the repository, so there is **no claim of a successful end-to-end local run**. No runtime failures were observed because the startup sequence could not be attempted.
 - **Remaining acceptance check:** on a second machine, run section 3 verbatim, confirm `http://localhost:3000` and seeded demo sign-in, process one mocked generation job, and confirm both worker and renderer output. Record any actual machine-specific errors in this document before marking T02 complete.
