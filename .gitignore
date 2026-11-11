@@ -10,10 +10,8 @@ build/
 out/
 *.tsbuildinfo
 
-# env
-.env
-.env.local
-.env.*.local
+# env (ignore all local variants; only the public template is tracked)
+.env*
 !.env.example
 
 # logs
