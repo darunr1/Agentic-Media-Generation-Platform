@@ -33,6 +33,8 @@ blob-report/
 # prisma
 packages/database/prisma/dev.db
 packages/database/.embedded-postgres/
+# Local embedded PostgreSQL data directory; never commit database clusters.
+packages/database/.embedded-postgres-data/
 
 # media / local storage
 .local-storage/
