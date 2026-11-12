@@ -7,7 +7,7 @@ This is the recommended setup for a **fresh clone on a second machine**. Docker 
 - Git, **Node.js 22+**, and **pnpm 9.15.0** (pinned by `packageManager` in the root `package.json`).
 - Docker Desktop/Engine with the **Docker Compose v2** plugin, with Docker running. On Windows, use Docker Desktop with a working Linux-container backend.
 - Available ports: **5432** for PostgreSQL and **3000** for the web app. The worker and renderer default to **3001** and **3002**.
-- FFmpeg for rendering: the `@contentforge/media` package includes `ffmpeg-static` for supported platforms. If the bundled binary does not work, install FFmpeg and set `FFMPEG_PATH` in `.env` to the executable. The Docker images install FFmpeg and fonts.
+- **FFmpeg with the `drawtext` filter and installed fonts is required to seed demo videos.** On the tested Ubuntu CI runner, the bundled `ffmpeg-static` binary did not support `drawtext`; `pnpm db:seed` failed with `FFmpeg failed (8)`. Install a system FFmpeg build that supports `drawtext` (Ubuntu/Debian: `sudo apt-get install ffmpeg fonts-dejavu-core`) and set `FFMPEG_PATH` in `.env` to its full executable path. For Windows, install a compatible FFmpeg build with libfreetype support. The Docker images already install FFmpeg and fonts.
 
 From a terminal, confirm:
 
@@ -17,6 +17,8 @@ pnpm --version
 docker compose version
 docker info
 ```
+
+Run `ffmpeg -hide_banner -filters` using your system FFmpeg and confirm the output includes `drawtext`. On Windows PowerShell, `ffmpeg -hide_banner -filters | Select-String drawtext` can check this. If the system FFmpeg executable is not on `PATH`, invoke its full path instead.
 
 If pnpm is missing, try `corepack enable` (where Corepack is available) or install the pinned version with `npm install -g pnpm@9.15.0`. Use the repository root for all remaining commands.
 
@@ -51,6 +53,8 @@ AI_TTS_PROVIDER=mock
 AI_TRANSCRIPTION_PROVIDER=mock
 SOCIAL_MOCK=true
 ```
+
+**Add `FFMPEG_PATH` to `.env`.** On the tested Ubuntu runner the working setting was `FFMPEG_PATH=/usr/bin/ffmpeg`; on Windows use the actual absolute path to `ffmpeg.exe` (for example, `FFMPEG_PATH=C:/ffmpeg/bin/ffmpeg.exe` if installed there). The path is machine-specific, not a secret. Verify that the chosen binary supports `drawtext` before running `pnpm db:seed`.
 
 The username/password above are **development-only Compose defaults**, not production credentials. Leave real OpenAI, Gemini, ElevenLabs, Resend, Stripe, and social provider keys unset when running mocks. Selecting a real provider requires its credentials and applicable model configuration; see [provider setup](../PROVIDERS.md) and [the environment template](../.env.example).
 
@@ -126,7 +130,7 @@ For an optional database UI, run `docker compose up -d adminer` and open **http:
 - **Invalid environment configuration:** Replace both local secret placeholders and inspect `packages/shared/src/env.ts` for validation rules.
 - **Prisma Client missing:** Run `pnpm db:generate` and retry. GitHub's fresh-install CI log confirmed that the `@prisma/client` postinstall hook did not find this workspace's schema automatically.
 - **Queued jobs or stalled renders:** Confirm **both** worker and renderer run; inspect their logs, `QUEUE_PROVIDER=postgres`, `DATABASE_URL`, and shared `LOCAL_STORAGE_DIR`.
-- **FFmpeg unavailable:** Check the bundled `ffmpeg-static` executable; install FFmpeg and set `FFMPEG_PATH` if needed.
+- **Seeding fails with `FFmpeg failed (8)` or a missing `drawtext` filter:** The bundled `ffmpeg-static` binary lacked `drawtext` on the Ubuntu CI runner. Install system FFmpeg with `drawtext` and fonts, set `FFMPEG_PATH` in `.env` to that binary, and rerun `pnpm db:seed`. On the tested runner, `/usr/bin/ffmpeg` resolved the failure.
 
 Use `Ctrl+C` to stop host development processes and `docker compose stop postgres` to stop the database without deleting its data. **Do not use `docker compose down -v` unless intentionally deleting local Docker volumes**. Local media is in gitignored `.local-storage/`.
 
@@ -137,5 +141,6 @@ Use `Ctrl+C` to stop host development processes and `docker compose stop postgre
 - **Source-checked:** the exact `pnpm` scripts exist in the root and database `package.json` files; the `postgres` service and health check exist in `docker-compose.yml`; the web/worker/renderer `dev` scripts exist; `.env.example` documents the local defaults.
 - **CI coverage:** `.github/workflows/ci.yml` runs `pnpm install --frozen-lockfile`, migrations against a PostgreSQL service, and `docker compose config --quiet`; it also builds all three Docker images. CI is **not** a verification of this exact host-side Docker Compose startup sequence.
 - **Observed CI installation warning:** The `@prisma/client` postinstall step reported it could not locate the Prisma schema at a default path. The prescribed `pnpm db:generate` step addresses this as a deterministic prerequisite; it has not been validated on a second machine.
-- **Not executed for this documentation change:** a fresh-clone/second-machine smoke test of the commands in section 3 and the optional full Compose stack. The available authoring environment has neither Docker nor pnpm and cannot pull the repository, so there is **no claim of a successful end-to-end local run**. No runtime failures were observed because the startup sequence could not be attempted.
-- **Remaining acceptance check:** on a second machine, run section 3 verbatim, confirm `http://localhost:3000` and seeded demo sign-in, process one mocked generation job, and confirm both worker and renderer output. Record any actual machine-specific errors in this document before marking T02 complete.
+- **Observed and corrected in clean-runner CI:** The first Docker startup smoke test failed during `pnpm db:seed` with `FFmpeg failed (8)`. The bundled FFmpeg lacked `drawtext`; a rerun using `FFMPEG_PATH=/usr/bin/ffmpeg` successfully completed frozen install, Compose PostgreSQL startup, migrations, Prisma generation, full demo seed, and HTTP readiness probes for the web app, worker, and renderer. See [the passing GitHub Actions smoke run](https://github.com/darunr1/Agentic-Media-Generation-Platform/actions/runs/43127014388).
+- **Still not executed on a second developer machine:** Windows/macOS setup, a full mocked generation job through the UI, and the optional full Compose app stack. The authoring environment does not have Docker or pnpm; successful Linux CI startup is not proof of cross-platform reproducibility.
+- **Remaining acceptance check:** on a separate developer machine, install/configure a compatible FFmpeg binary, run section 3 verbatim, confirm `http://localhost:3000` and seeded demo sign-in, process one mocked generation job, and confirm both worker and renderer output. Record any machine-specific failures before marking T02 complete.
