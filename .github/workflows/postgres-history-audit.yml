@@ -1,0 +1,84 @@
+name: Historical PostgreSQL secret-pattern audit
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/postgres-history-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Extract exact pre-removal database snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          rev=6d10385c5622992bd4ff00e532e33d95bd81418f
+          git cat-file -e "${rev}:packages/database/.embedded-postgres-data/PG_VERSION"
+          mkdir -p "$RUNNER_TEMP/pg-history"
+          git archive "$rev" packages/database/.embedded-postgres-data | tar -xf - -C "$RUNNER_TEMP/pg-history"
+      - name: Scan binary files without printing matches
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "pg-history/packages/database/.embedded-postgres-data"
+          if not (root / "PG_VERSION").exists():
+              raise RuntimeError("Historical PostgreSQL snapshot was not extracted")
+
+          checks = {
+              "OpenAI-style sk- token": rb"sk-[A-Za-z0-9_-]{16,}",
+              "Google AIza key": rb"AIza[0-9A-Za-z_-]{35}",
+              "PEM private key header": rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+              "GitHub token": rb"gh[pousr]_[A-Za-z0-9]{20,}",
+              "Slack token": rb"xox[baprs]-[A-Za-z0-9-]{10,}",
+              "AWS access key ID": rb"(?:AKIA|ASIA)[A-Z0-9]{16}",
+              "Database connection URI": rb"postgres(?:ql)?://[^\\s\\x00]{16,}",
+          }
+          compiled = {name: re.compile(expr) for name, expr in checks.items()}
+          matches = {name: 0 for name in checks}
+          total_files = 0
+          total_bytes = 0
+
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              data = path.read_bytes()
+              total_files += 1
+              total_bytes += len(data)
+              for name, pattern in compiled.items():
+                  if pattern.search(data):
+                      matches[name] += 1
+
+          print(f"Scanned {total_files} files ({total_bytes} bytes) from pre-removal commit.")
+          for name, count in matches.items():
+              print(f"{name}: {count} matching file(s)")
+          print("No secret values, matching lines, or matching file paths were printed.")
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as out:
+                  out.write("## Pre-removal PostgreSQL binary scan\\n\\n")
+                  out.write(f"Snapshot: \`6d10385c5622992bd4ff00e532e33d95bd81418f\`\\n\\n")
+                  out.write(f"Files: {total_files}, bytes: {total_bytes}\\n\\n")
+                  for name, count in matches.items():
+                      out.write(f"- {name}: {count} matching file(s)\\n")
+                  out.write("\\n**Limitations:** Binary string-pattern scan only. Compressed/TOAST data, nonstandard credentials, Auth.js session records, and personally identifiable information may be missed. A clean scan is NOT a clean database audit.\\n")
+
+          if any(matches.values()):
+              print("Potential secret pattern found in committed history; manual inspection and rotation required.")
+              sys.exit(1)
+          PY
