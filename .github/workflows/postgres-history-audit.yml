@@ -91,7 +91,8 @@ jobs:
           rm -f "$data/postmaster.pid"
           if ! docker run -d --network none --name historical-pg-audit \
             -v "$data:/var/lib/postgresql/data" postgres:17-alpine > /dev/null; then
-            echo "Historical PostgreSQL recovery unavailable; manual row audit remains required."
+            echo "::warning title=Historical database audit incomplete::PostgreSQL recovery unavailable; manual row audit required."
+            echo "### Historical row audit: NOT VERIFIED (database recovery unavailable)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           trap 'docker rm -f historical-pg-audit >/dev/null 2>&1 || true' EXIT
@@ -105,7 +106,8 @@ jobs:
             sleep 2
           done
           if [ "$ready" != 1 ]; then
-            echo "Historical cluster did not start cleanly; database-row audit is unresolved."
+            echo "::warning title=Historical database audit incomplete::Committed PostgreSQL 17 snapshot did not start in Linux; inspect a compatible local copy."
+            echo "### Historical row audit: NOT VERIFIED (cluster did not start)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           sql='SELECT
@@ -117,7 +119,8 @@ jobs:
             (SELECT count(*) FROM "ApiKey")'
           counts=$(docker exec -e PGPASSWORD=contentforge historical-pg-audit \
             psql -U contentforge -d contentforge_dev -X -At -F '|' -c "$sql") || {
-              echo "Historical tables could not be queried; database-row audit remains unresolved."
+              echo "::warning title=Historical database audit incomplete::Historical table query failed; manual row audit required."
+              echo "### Historical row audit: NOT VERIFIED (table query failed)" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             }
           IFS='|' read -r users oauth_tokens sessions verification_tokens social_tokens api_keys <<< "$counts"
