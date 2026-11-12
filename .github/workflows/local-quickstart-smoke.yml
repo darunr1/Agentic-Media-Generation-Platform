@@ -17,6 +17,8 @@ jobs:
   quickstart:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      FFMPEG_PATH: /usr/bin/ffmpeg
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -44,6 +46,10 @@ jobs:
           NODE
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check FFmpeg drawtext support
+        run: |
+          /usr/bin/ffmpeg -hide_banner -filters 2>/dev/null | grep -q drawtext
+          pnpm --filter @contentforge/media exec node -e 'const { spawnSync } = require("node:child_process"); const p = require("ffmpeg-static"); const r = spawnSync(p, ["-hide_banner", "-filters"], { encoding: "utf8" }); console.log("Bundled FFmpeg drawtext:", /drawtext/.test(r.stdout ?? ""));'
       - name: Start Docker PostgreSQL
         run: docker compose up -d postgres
       - name: Wait for PostgreSQL
