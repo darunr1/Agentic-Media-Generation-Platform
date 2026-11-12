@@ -1,0 +1,100 @@
+name: Local quickstart smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/local-quickstart-smoke.yml"
+      - "docker-compose.yml"
+      - "docs/local-development.md"
+      - "packages/database/package.json"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quickstart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FFMPEG_PATH: /usr/bin/ffmpeg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - name: Install FFmpeg and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+      - name: Configure fake local-only secrets
+        run: |
+          cp .env.example .env
+          node <<'NODE'
+          const fs = require("node:fs");
+          const crypto = require("node:crypto");
+          let env = fs.readFileSync(".env", "utf8");
+          for (const key of ["AUTH_SECRET", "ENCRYPTION_KEY"]) {
+            const value = crypto.randomBytes(32).toString("base64");
+            const line = new RegExp(`^${key}=.*$`, "m");
+            if (!line.test(env)) throw new Error(`Missing ${key} in .env.example`);
+            env = env.replace(line, `${key}=${value}`);
+          }
+          fs.writeFileSync(".env", env, { mode: 0o600 });
+          NODE
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check FFmpeg drawtext support
+        run: |
+          /usr/bin/ffmpeg -hide_banner -filters 2>/dev/null | grep -q drawtext
+          pnpm --filter @contentforge/media exec node -e 'const { spawnSync } = require("node:child_process"); const p = require("ffmpeg-static"); const r = spawnSync(p, ["-hide_banner", "-filters"], { encoding: "utf8" }); console.log("Bundled FFmpeg drawtext:", /drawtext/.test(r.stdout ?? ""));'
+      - name: Start Docker PostgreSQL
+        run: docker compose up -d postgres
+      - name: Wait for PostgreSQL
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U contentforge -d contentforge_dev > /dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready"
+          exit 1
+      - name: Migrate, generate Prisma Client, and seed
+        run: |
+          pnpm db:migrate
+          pnpm db:generate
+          pnpm db:seed
+      - name: Start web, worker, renderer and verify readiness
+        run: |
+          pnpm dev > "$RUNNER_TEMP/contentforge-dev.log" 2>&1 &
+          dev_pid=$!
+          trap 'kill "$dev_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent --max-time 4 http://127.0.0.1:3000/sign-in -o /dev/null \
+              && curl --fail --silent --max-time 4 http://127.0.0.1:3001/readyz -o /dev/null \
+              && curl --fail --silent --max-time 4 http://127.0.0.1:3002/readyz -o /dev/null; then
+              echo "Web, worker and renderer are ready"
+              exit 0
+            fi
+            if ! kill -0 "$dev_pid" 2>/dev/null; then
+              echo "pnpm dev exited before all services were ready"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Timed out waiting for all services"
+          exit 1
+      - name: Diagnostic service status (no environment values)
+        if: failure()
+        run: |
+          docker compose ps || true
+          if [ -f "$RUNNER_TEMP/contentforge-dev.log" ]; then
+            grep -E 'Queue service started|Ready in|started server' "$RUNNER_TEMP/contentforge-dev.log" || true
+          fi
+      - name: Stop database without removing data
+        if: always()
+        run: docker compose down || true
