@@ -1,7 +1,7 @@
 name: contentforge
 
-# Complete local stack. No paid provider or cloud account is required.
-
+# The local stack uses one persistent media volume across all application services.
+# Copy .env.example to .env and supply local AUTH_SECRET/ENCRYPTION_KEY first.
 services:
   postgres:
     image: postgres:16-alpine
@@ -31,6 +31,21 @@ services:
     environment:
       ADMINER_DEFAULT_SERVER: postgres
 
+  # Prevent API and queue consumers from starting against an unmigrated DB.
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://contentforge:contentforge@postgres:5432/contentforge_dev?schema=public
+      NODE_ENV: production
+    command: ["pnpm", "--filter", "@contentforge/database", "db:migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   web:
     build:
       context: .
@@ -40,13 +55,20 @@ services:
       DATABASE_URL: postgresql://contentforge:contentforge@postgres:5432/contentforge_dev?schema=public
       LOCAL_STORAGE_DIR: /data
       QUEUE_PROVIDER: postgres
+      NODE_ENV: production
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - contentforge_media:/data
     ports:
       - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
 
   worker:
     build:
@@ -58,13 +80,20 @@ services:
       LOCAL_STORAGE_DIR: /data
       QUEUE_PROVIDER: postgres
       WORKER_PORT: 3001
+      NODE_ENV: production
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - contentforge_media:/data
     ports:
       - "127.0.0.1:3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   renderer:
     build:
@@ -76,13 +105,20 @@ services:
       QUEUE_PROVIDER: postgres
       RENDERER_PORT: 3002
       LOCAL_STORAGE_DIR: /data
+      NODE_ENV: production
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - contentforge_media:/data
     ports:
       - "127.0.0.1:3002:3002"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
 volumes:
   contentforge_postgres_data:

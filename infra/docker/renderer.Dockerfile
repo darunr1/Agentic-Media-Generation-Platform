@@ -4,5 +4,6 @@ WORKDIR /app
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm --filter @contentforge/database db:generate && pnpm --filter @contentforge/renderer build
 ENV NODE_ENV=production
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
 EXPOSE 3002
 CMD ["pnpm","--filter","@contentforge/renderer","start"]
