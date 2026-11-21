@@ -1,0 +1,26 @@
+name: Temporary format preview
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/format-preview.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Print Prettier-normalized upload validation tests
+        run: |
+          pnpm exec prettier --write packages/media/src/upload-validation.test.ts
+          echo "===FORMAT START==="
+          cat packages/media/src/upload-validation.test.ts
+          echo "===FORMAT END==="
