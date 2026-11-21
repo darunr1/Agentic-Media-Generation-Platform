@@ -56,14 +56,24 @@ describe("validateImageUpload", () => {
     ).toThrow();
   });
 
-  it.each(["../a.png", "..a.png", "a/b.png", "a\\b.png", ".hidden.png", "a.png.", "CON.jpg", "bad name.png", "x\u0000.png"])(
-    "rejects unsafe filename %j",
-    (filename) => {
+  it("rejects unsafe filenames", () => {
+    const filenames = [
+      "../a.png",
+      "..a.png",
+      "a/b.png",
+      "a\\b.png",
+      ".hidden.png",
+      "a.png.",
+      "CON.jpg",
+      "bad name.png",
+      "x\u0000.png",
+    ];
+    for (const filename of filenames) {
       expect(() =>
         validateImageUpload({ filename, contentType: "image/png", bytes: png }),
       ).toThrow("Unsafe image filename");
-    },
-  );
+    }
+  });
 
   it("rejects an extension that does not agree with the image bytes", () => {
     expect(() =>
