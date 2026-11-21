@@ -69,9 +69,9 @@ describe("validateImageUpload", () => {
       "x\u0000.png",
     ];
     for (const filename of filenames) {
-      expect(() =>
-        validateImageUpload({ filename, contentType: "image/png", bytes: png }),
-      ).toThrow("Unsafe image filename");
+      expect(() => validateImageUpload({ filename, contentType: "image/png", bytes: png })).toThrow(
+        "Unsafe image filename",
+      );
     }
   });
 
