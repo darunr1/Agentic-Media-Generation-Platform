@@ -41,12 +41,13 @@ function isPng(bytes: Uint8Array): boolean {
 }
 
 function isJpeg(bytes: Uint8Array): boolean {
+  const marker = bytes[3] ?? 0;
   return (
     bytes.byteLength >= 8 &&
     hasBytes(bytes, [0xff, 0xd8, 0xff]) &&
-    bytes[3] >= 0xc0 &&
-    bytes[3] <= 0xfe &&
-    bytes[3] !== 0xd9 &&
+    marker >= 0xc0 &&
+    marker <= 0xfe &&
+    marker !== 0xd9 &&
     hasBytes(bytes, [0xff, 0xd9], bytes.byteLength - 2)
   );
 }
