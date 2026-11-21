@@ -7,7 +7,7 @@ This is the recommended setup for a **fresh clone on a second machine**. Docker 
 - Git, **Node.js 22+**, and **pnpm 9.15.0** (pinned by `packageManager` in the root `package.json`).
 - Docker Desktop/Engine with the **Docker Compose v2** plugin, with Docker running. On Windows, use Docker Desktop with a working Linux-container backend.
 - Available ports: **5432** for PostgreSQL and **3000** for the web app. The worker and renderer default to **3001** and **3002**.
-- **FFmpeg with the `drawtext` filter and installed fonts is required to seed demo videos.** On the tested Ubuntu CI runner, the bundled `ffmpeg-static` binary did not support `drawtext`; `pnpm db:seed` failed with `FFmpeg failed (8)`. Install a system FFmpeg build that supports `drawtext` (Ubuntu/Debian: `sudo apt-get install ffmpeg fonts-dejavu-core`) and set `FFMPEG_PATH` in `.env` to its full executable path. For Windows, install a compatible FFmpeg build with libfreetype support. The Docker images already install FFmpeg and fonts.
+- **FFmpeg with the `drawtext` filter and installed fonts is required to seed demo videos.** On the tested Ubuntu CI runner, the bundled `ffmpeg-static` binary did not support `drawtext`; `pnpm db:seed` failed with `FFmpeg failed (8)`. Install a system FFmpeg build that supports `drawtext` (Ubuntu/Debian: `sudo apt-get install ffmpeg fonts-dejavu-core`) and set `FFMPEG_PATH` in `.env` to its full executable path. For Windows, install a compatible FFmpeg build with libfreetype support. The worker and renderer Docker images install FFmpeg and fonts.
 
 From a terminal, confirm:
 
@@ -105,22 +105,54 @@ docker compose ps
 
 `docker compose up -d postgres` alone does **not** create worker or renderer containers. The commands above only show those container logs after those services are started.
 
-## 5. Optional: run the full container stack
+## 5. Full Docker Compose stack (T03)
 
-Do this **instead of** `pnpm dev` (stop host processes first). The renderer image includes the database CLI and shares the media volume with other app containers:
+This is an **alternative** to the host-process quickstart in section 3. Stop `pnpm dev` before starting the full stack, because both modes use ports 3000–3002. The Compose `migrate` service now runs migrations automatically after PostgreSQL becomes healthy; do not use the obsolete `docker compose run --rm renderer ... db:migrate` sequence. The production-mode stack does not automatically seed the development demo or enable development-only login.
+
+The Compose stack builds the production images, waits for healthy PostgreSQL,
+runs Prisma migrations once, then starts the web, worker, and renderer. All three
+app containers expose readiness healthchecks. They share a named `/data` volume.
+
+From the repository root, configure **development-only** secrets first:
 
 ```bash
-docker compose build web worker renderer
-docker compose up -d postgres
-docker compose run --rm renderer pnpm --filter @contentforge/database db:migrate
-docker compose run --rm renderer pnpm --filter @contentforge/database db:seed
-docker compose up -d web worker renderer
-docker compose logs -f --tail=100 worker renderer
+cp .env.example .env
+# Change AUTH_SECRET and ENCRYPTION_KEY in .env to distinct random 32-byte values.
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
 ```
 
-This mirrors the repository's [Docker setup notes](../README.md). Containers use `postgres:5432` as the database host (Compose overrides `DATABASE_URL`), whereas host-side `pnpm` commands use `localhost:5432`. The shared Docker media volume allows seed-generated files to be read by the worker and renderer. Do not expect the development-only demo login in production-mode containers.
+Expect `postgres`, `web`, `worker`, and `renderer` to become `healthy`;
+`migrate` must exit with code 0. The following commands check readiness from
+the host (ports are only bound to localhost):
 
-For an optional database UI, run `docker compose up -d adminer` and open **http://localhost:8080**; use server `postgres` and the Compose development credentials.
+```bash
+curl --fail http://127.0.0.1:3000/api/readyz
+curl --fail http://127.0.0.1:3001/readyz
+curl --fail http://127.0.0.1:3002/readyz
+docker compose logs --no-color migrate
+```
+
+Now **create a real MP4 inside the renderer container** and prove that the
+web container sees the same media through the shared volume:
+
+```bash
+docker compose exec -T renderer pnpm --filter @contentforge/renderer render:demo
+docker compose exec -T renderer ls -lh /data/demo/contentforge-demo.mp4
+docker compose exec -T web ls -lh /data/demo/contentforge-demo.mp4
+docker compose exec -T renderer test -s /data/demo/contentforge-demo.mp4
+docker compose exec -T web test -s /data/demo/contentforge-demo.mp4
+```
+
+Clean up with `docker compose down` (preserves media/database named volumes);
+use `docker compose down --volumes` only when you intentionally want to erase
+local DB and generated media.
+
+The `Compose stack smoke` GitHub Actions workflow repeats these checks on
+relevant pull requests. A committed smoke-test procedure is **not** evidence
+that an MP4 was generated until the workflow passes.
 
 ## 6. Troubleshooting and safe cleanup
 
@@ -139,8 +171,8 @@ Use `Ctrl+C` to stop host development processes and `docker compose stop postgre
 ## 7. Verification status
 
 - **Source-checked:** the exact `pnpm` scripts exist in the root and database `package.json` files; the `postgres` service and health check exist in `docker-compose.yml`; the web/worker/renderer `dev` scripts exist; `.env.example` documents the local defaults.
-- **CI coverage:** `.github/workflows/ci.yml` runs `pnpm install --frozen-lockfile`, migrations against a PostgreSQL service, and `docker compose config --quiet`; it also builds all three Docker images. CI is **not** a verification of this exact host-side Docker Compose startup sequence.
+- **CI coverage:** `.github/workflows/ci.yml` checks formatting, lint, typechecking, tests, migrations, build, and Docker images. The separate `Compose stack smoke` workflow confirms the full container stack and renders a demo MP4. Neither workflow proves a fresh Windows/macOS host install works.
 - **Observed CI installation warning:** The `@prisma/client` postinstall step reported it could not locate the Prisma schema at a default path. The prescribed `pnpm db:generate` step addresses this as a deterministic prerequisite; it has not been validated on a second machine.
 - **Observed and corrected in clean-runner CI:** The first Docker startup smoke test failed during `pnpm db:seed` with `FFmpeg failed (8)`. The bundled FFmpeg lacked `drawtext`; a rerun using `FFMPEG_PATH=/usr/bin/ffmpeg` successfully completed frozen install, Compose PostgreSQL startup, migrations, Prisma generation, full demo seed, and HTTP readiness probes for the web app, worker, and renderer. See [the passing GitHub Actions smoke run](https://github.com/darunr1/Agentic-Media-Generation-Platform/actions/runs/43127014388).
-- **Still not executed on a second developer machine:** Windows/macOS setup, a full mocked generation job through the UI, and the optional full Compose app stack. The authoring environment does not have Docker or pnpm; successful Linux CI startup is not proof of cross-platform reproducibility.
-- **Remaining acceptance check:** on a separate developer machine, install/configure a compatible FFmpeg binary, run section 3 verbatim, confirm `http://localhost:3000` and seeded demo sign-in, process one mocked generation job, and confirm both worker and renderer output. Record any machine-specific failures before marking T02 complete.
+- **Still not executed on a second developer machine:** Windows/macOS setup, a full mocked generation job through the UI, and the full end-to-end user journey through the production-mode Compose UI. The T03 Compose stack smoke test passed on GitHub Actions, including an MP4 generated inside the renderer and observed from the web container; this is not proof of cross-platform reproducibility.
+- **Remaining acceptance check:** on a separate developer machine, install/configure a compatible FFmpeg binary, run section 3 verbatim, confirm `http://localhost:3000` and seeded demo sign-in, process one mocked generation job, and confirm both worker and renderer output. Record any machine-specific failures before marking the cross-platform T02 acceptance complete.

@@ -1,0 +1,65 @@
+name: Compose stack smoke
+
+on:
+  pull_request:
+    paths:
+      - "docker-compose.yml"
+      - "infra/docker/**"
+      - "docs/local-development.md"
+      - ".github/workflows/compose-stack-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure development-only local secrets
+        run: |
+          cp .env.example .env
+          node <<'NODE'
+          const fs = require("node:fs");
+          const crypto = require("node:crypto");
+          let env = fs.readFileSync(".env", "utf8");
+          for (const key of ["AUTH_SECRET", "ENCRYPTION_KEY"]) {
+            const value = crypto.randomBytes(32).toString("base64");
+            env = env.replace(new RegExp(`^${key}=.*$`, "m"), `${key}=${value}`);
+          }
+          fs.writeFileSync(".env", env, { mode: 0o600 });
+          NODE
+      - name: Validate Compose and start complete stack
+        run: |
+          docker compose config --quiet
+          docker compose up -d --build
+      - name: Verify database migration and all readiness endpoints
+        run: |
+          test "$(docker compose ps -a migrate --format json | grep -c '"ExitCode":0')" -gt 0
+          for attempt in $(seq 1 80); do
+            if curl -fsS --max-time 5 http://127.0.0.1:3000/api/readyz > /dev/null \
+              && curl -fsS --max-time 5 http://127.0.0.1:3001/readyz > /dev/null \
+              && curl -fsS --max-time 5 http://127.0.0.1:3002/readyz > /dev/null; then
+              echo "Web, worker and renderer are ready"
+              break
+            fi
+            if [ "$attempt" -eq 80 ]; then echo "Readiness timed out"; exit 1; fi
+            sleep 3
+          done
+          docker compose ps
+      - name: Render MP4 in a container and check shared media volume
+        run: |
+          docker compose exec -T renderer pnpm --filter @contentforge/renderer render:demo
+          docker compose exec -T renderer test -s /data/demo/contentforge-demo.mp4
+          docker compose exec -T web test -s /data/demo/contentforge-demo.mp4
+          docker compose exec -T renderer ls -lh /data/demo/contentforge-demo.mp4
+      - name: Diagnostics (no environment values)
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --no-color --tail 60 postgres migrate web worker renderer || true
+      - name: Stop stack and preserve volumes for diagnostics
+        if: always()
+        run: docker compose down || true
