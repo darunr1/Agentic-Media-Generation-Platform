@@ -92,6 +92,30 @@ test("new campaign becomes an approved, published video with stored analytics", 
   await page.getByText("Open content in the studio", { exact: true }).click();
   const video = page.getByLabel("Rendered content preview");
   await expect(video).toBeVisible();
+  const captionButton = page.getByRole("button", { name: "Download Captions (VTT)" });
+  const captionUrl = await video.locator("track").getAttribute("src");
+  expect(captionUrl).toBeTruthy();
+  // Simulate an expired signed link without changing the persisted render.
+  const expiredCaption = (url: URL) =>
+    url.pathname === "/api/storage" && url.searchParams.get("key")?.endsWith("/captions.vtt") === true;
+  await page.route(expiredCaption, (route) => route.fulfill({ status: 403 }));
+  await captionButton.click();
+  await expect(page.getByRole("alert").filter({ hasText: "caption link expired" })).toBeVisible();
+  await page.unroute(expiredCaption);
+  await page.getByRole("button", { name: "Refresh caption link" }).click();
+  await expect(captionButton).toBeEnabled();
+  const [captions] = await Promise.all([page.waitForEvent("download"), captionButton.click()]);
+  expect(captions.suggestedFilename()).toBe("contentforge-captions.vtt");
+  expect(await captions.failure()).toBeNull();
+  const captionStream = await captions.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of captionStream) chunks.push(Buffer.from(chunk));
+  const downloadedCaptions = Buffer.concat(chunks).toString("utf8");
+  expect(downloadedCaptions).toMatch(/^WEBVTT/);
+  const refreshedCaptionUrl = await video.locator("track").getAttribute("src");
+  const captionResponse = await request.get(refreshedCaptionUrl!);
+  expect(captionResponse.ok()).toBe(true);
+  expect(downloadedCaptions).toBe(await captionResponse.text());
   await expect
     .poll(() => video.evaluate((el: HTMLVideoElement) => el.readyState))
     .toBeGreaterThanOrEqual(1);

@@ -195,7 +195,7 @@ export default async function StudioPage({
           )}
           {videoUrl && (
             <CaptionDownload
-              key={`${content.id}:${captionUrl ?? "unavailable"}`}
+              key={`${output?.id}:${caption?.storageKey ?? "unavailable"}`}
               url={captionUrl}
               extension={caption?.format === "SRT" ? "srt" : "vtt"}
             />

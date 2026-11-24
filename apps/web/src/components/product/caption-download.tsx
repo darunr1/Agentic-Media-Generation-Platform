@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { captionDownloadError } from "./caption-download-state";
 
-export function CaptionDownload({
-  url,
-  extension,
-}: {
+interface CaptionDownloadProps {
   url?: string;
   extension: "srt" | "vtt";
-}) {
+}
+
+export function CaptionDownload({ url, extension }: CaptionDownloadProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [refreshing, startTransition] = useTransition();
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
 
@@ -56,7 +56,7 @@ export function CaptionDownload({
         <button
           type="button"
           className="text-primary font-medium underline disabled:opacity-50"
-          disabled={busy}
+          disabled={busy || refreshing}
           onClick={() => void download()}
         >
           {busy ? "Downloading captions…" : `Download Captions (${extension.toUpperCase()})`}
@@ -69,13 +69,17 @@ export function CaptionDownload({
           {error}
         </p>
       )}
-      {(!url || error) && (
+      {(!url || error || refreshing) && (
         <button
           type="button"
           className="text-primary block underline"
-          onClick={() => router.refresh()}
+          disabled={busy || refreshing}
+          onClick={() => {
+            setError("");
+            startTransition(() => router.refresh());
+          }}
         >
-          Refresh caption link
+          {refreshing ? "Refreshing caption link…" : "Refresh caption link"}
         </button>
       )}
     </div>
