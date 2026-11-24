@@ -7,6 +7,8 @@ import { Badge, Card, CardContent } from "@contentforge/ui";
 import { PageHeading } from "@/components/product/page-heading";
 import { ActionButton, RecordForm, ScheduleForm } from "@/components/product/workflow-actions";
 import { ScriptEditor } from "@/components/product/script-editor";
+import { StudioProgress } from "@/components/product/studio-progress";
+import { studioProgressState } from "@/components/product/studio-progress-state";
 import { getWorkspaceContext } from "@/server/services/workspace-context";
 export default async function StudioPage({
   params,
@@ -128,6 +130,8 @@ export default async function StudioPage({
   const active = content.workflowRuns.some((r) =>
     ["PENDING", "RUNNING", "WAITING"].includes(r.status),
   );
+  const production = content.workflowRuns.find((run) => run.type === "CONTENT_PRODUCTION");
+  const progress = studioProgressState(content.status, production?.status, Boolean(output));
   const editable =
     !active &&
     ["DRAFT", "AWAITING_REVIEW", "CHANGES_REQUESTED", "APPROVED", "FAILED"].includes(
@@ -165,6 +169,12 @@ export default async function StudioPage({
           Open approval queue
         </a>
       </div>
+      <StudioProgress
+        key={content.id}
+        state={progress}
+        hasVideo={Boolean(videoUrl)}
+        workflowHref={production ? `/w/${workspaceSlug}/workflows/${production.id}` : undefined}
+      />
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <div className="space-y-4">
           {videoUrl ? (
