@@ -5,6 +5,8 @@ import { scriptSchema, type ScriptOutput } from "@contentforge/ai";
 import { LocalObjectStorageProvider, localStorageRoot } from "@contentforge/media";
 import { Badge, Card, CardContent } from "@contentforge/ui";
 import { PageHeading } from "@/components/product/page-heading";
+import { CaptionDownload } from "@/components/product/caption-download";
+import { matchingCaptionTrack } from "@/components/product/caption-download-state";
 import { ActionButton, RecordForm, ScheduleForm } from "@/components/product/workflow-actions";
 import { ScriptEditor } from "@/components/product/script-editor";
 import { StudioProgress } from "@/components/product/studio-progress";
@@ -114,9 +116,9 @@ export default async function StudioPage({
   const videoUrl = output
     ? await storage.createSignedDownloadUrl(output.storageKey, 3600)
     : undefined;
-  const caption = saved?.captionTracks.find((t) => t.format === "WEBVTT");
+  const caption = matchingCaptionTrack(output?.storageKey, saved?.captionTracks ?? []);
   const captionUrl = caption
-    ? await storage.createSignedDownloadUrl(caption.storageKey, 3600)
+    ? await storage.createSignedDownloadUrl(caption.storageKey, 3600).catch(() => undefined)
     : undefined;
   const versions = await prisma.contentVersion.findMany({
     where: { workspaceId: ctx.workspace.id, contentItemId: content.id },
@@ -185,7 +187,7 @@ export default async function StudioPage({
               src={videoUrl}
               className="w-full rounded-xl"
             >
-              {captionUrl && (
+              {captionUrl && caption?.format === "WEBVTT" && (
                 <track kind="captions" src={captionUrl} srcLang="en" label="English" default />
               )}
             </video>
@@ -208,6 +210,13 @@ export default async function StudioPage({
               workspaceSlug={workspaceSlug}
               contentId={content.id}
               accounts={accounts}
+            />
+          )}
+          {videoUrl && (
+            <CaptionDownload
+              key={`${output?.id}:${caption?.storageKey ?? "unavailable"}`}
+              url={captionUrl}
+              extension={caption?.format === "SRT" ? "srt" : "vtt"}
             />
           )}
           <Card>
