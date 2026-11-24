@@ -194,6 +194,15 @@ export default async function StudioPage({
               No rendered video yet. Start generation and follow the workflow below.
             </div>
           )}
+          {videoUrl && (
+            <a
+              className="text-primary block text-sm font-medium underline"
+              href={videoUrl}
+              download="contentforge-video.mp4"
+            >
+              Download MP4
+            </a>
+          )}
           {content.status === "APPROVED" && hasPermission(ctx.role, "publish:execute") && (
             <ScheduleForm
               workspaceSlug={workspaceSlug}

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test, type Locator } from "@playwright/test";
 
 test("new campaign becomes an approved, published video with stored analytics", async ({
@@ -107,6 +108,16 @@ test("new campaign becomes an approved, published video with stored analytics", 
   expect(mediaUrl).toBeTruthy();
   const media = await request.get(mediaUrl!, { headers: { Range: "bytes=0-31" } });
   expect(media.status()).toBe(206);
+  const mp4Link = page.getByRole("link", { name: "Download MP4" });
+  expect(await mp4Link.getAttribute("href")).toBe(mediaUrl);
+  const [mp4] = await Promise.all([page.waitForEvent("download"), mp4Link.click()]);
+  expect(mp4.suggestedFilename()).toBe("contentforge-video.mp4");
+  expect(await mp4.failure()).toBeNull();
+  const bytes = await readFile((await mp4.path())!);
+  expect(bytes.subarray(4, 8).toString()).toBe("ftyp");
+  const fullMedia = await request.get(mediaUrl!);
+  expect(fullMedia.ok()).toBe(true);
+  expect(bytes.equals(await fullMedia.body())).toBe(true);
   await page.getByRole("link", { name: "Open approval queue" }).click();
   await page.getByLabel("I reviewed the content and acknowledge compliance.").first().check();
   await clickMutation(
