@@ -96,8 +96,10 @@ test("new campaign becomes an approved, published video with stored analytics", 
   const captionUrl = await video.locator("track").getAttribute("src");
   expect(captionUrl).toBeTruthy();
   // Simulate an expired signed link without changing the persisted render.
-  const expiredCaption = (url: URL) =>
-    url.pathname === "/api/storage" && url.searchParams.get("key")?.endsWith("/captions.vtt") === true;
+  const expiredCaption = (url: URL) => {
+    const key = url.searchParams.get("key");
+    return url.pathname === "/api/storage" && Boolean(key?.endsWith("/captions.vtt"));
+  };
   await page.route(expiredCaption, (route) => route.fulfill({ status: 403 }));
   await captionButton.click();
   await expect(page.getByRole("alert").filter({ hasText: "caption link expired" })).toBeVisible();
