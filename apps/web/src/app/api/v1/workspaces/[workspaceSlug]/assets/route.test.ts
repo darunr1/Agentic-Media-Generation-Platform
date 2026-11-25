@@ -163,3 +163,67 @@ describe("POST workspace image assets", () => {
     expect(JSON.stringify(body)).not.toContain("database write failed");
   });
 });
+
+describe("image upload frontend contract", () => {
+  it.each([
+    [401, "UNAUTHENTICATED"],
+    [403, "FORBIDDEN"],
+    [404, "NOT_FOUND"],
+  ] as const)("returns a traceable %i error without persisting an asset", async (status, code) => {
+    if (status === 401) mock.auth.mockResolvedValue(null);
+    if (status === 403) mock.permission.mockRejectedValue(new ForbiddenError());
+    const req = request();
+    req.headers.set("x-request-id", "upload-contract-test");
+    const response = await send(req, status === 404 ? "beta" : "alpha");
+
+    expect(response.status).toBe(status);
+    expect(response.headers.get("x-request-id")).toBe("upload-contract-test");
+    expect(await response.json()).toEqual({
+      error: { code, message: expect.any(String), requestId: "upload-contract-test" },
+    });
+    expect(mock.put).not.toHaveBeenCalled();
+    expect(mock.createAsset).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid PNG advertised as JPEG", async () => {
+    const response = await send(request({ filename: "photo.jpg", mime: "image/jpeg" }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+    expect(mock.put).not.toHaveBeenCalled();
+    expect(mock.createAsset).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file one byte over the limit even without Content-Length", async () => {
+    const req = request({ bytes: Buffer.alloc(15 * 1024 * 1024 + 1) });
+    req.headers.delete("content-length");
+    const response = await send(req);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+    expect(mock.put).not.toHaveBeenCalled();
+    expect(mock.createAsset).not.toHaveBeenCalled();
+  });
+
+  it("bounds actual multipart bytes despite a falsely small Content-Length", async () => {
+    const req = request({ bytes: Buffer.alloc(16 * 1024 * 1024) });
+    req.headers.set("content-length", "1");
+    const response = await send(req);
+    expect(response.status).toBe(400);
+    expect(mock.brand).not.toHaveBeenCalled();
+    expect(mock.put).not.toHaveBeenCalled();
+    expect(mock.createAsset).not.toHaveBeenCalled();
+  });
+
+  it("persists validated bytes and returns only the opaque asset identifier", async () => {
+    const response = await send();
+    expect(response.status).toBe(201);
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    expect(await response.json()).toEqual({ data: { id: "asset-safe-id" } });
+    expect(mock.put).toHaveBeenCalledWith(
+      expect.stringMatching(/^workspaces\/workspace-a\/brands\/brand-a\/assets\/[0-9a-f-]+\.png$/),
+      expect.any(Uint8Array),
+      "image/png",
+    );
+    expect(mock.createAsset).toHaveBeenCalledOnce();
+    expect(mock.delete).not.toHaveBeenCalled();
+  });
+});
