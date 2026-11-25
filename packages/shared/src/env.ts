@@ -9,6 +9,8 @@ import { z } from "zod";
 const baseEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_URL: z.string().url().default("http://localhost:3000"),
+  APP_DEPLOYMENT: z.enum(["local", "staging", "production"]).default("local"),
+  AUTH_URL: z.string().url().optional(),
   PORT: z.coerce.number().int().positive().default(3000),
 
   // --- Database -----------------------------------------------------------
@@ -16,7 +18,10 @@ const baseEnvSchema = z.object({
 
   // --- Auth -----------------------------------------------------------------
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
-  AUTH_TRUST_HOST: z.coerce.boolean().default(true),
+  AUTH_TRUST_HOST: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
 
   // --- Encryption (OAuth token / secret-at-rest encryption) ---------------
   // 32-byte key, base64-encoded (44 chars). Generate with:
@@ -99,6 +104,49 @@ const baseEnvSchema = z.object({
 });
 
 const envSchema = baseEnvSchema.superRefine((config, ctx) => {
+  const appUrl = new URL(config.APP_URL);
+  const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(appUrl.hostname);
+  const deployed =
+    config.APP_DEPLOYMENT !== "local" || (config.NODE_ENV === "production" && !isLoopback);
+  if (deployed) {
+    const reject = (path: string, message: string) =>
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
+    if (config.NODE_ENV !== "production") {
+      reject("NODE_ENV", "Hosted deployments require production mode");
+    }
+    if (appUrl.protocol !== "https:" || isLoopback || config.APP_URL !== appUrl.origin) {
+      reject("APP_URL", "Use the external HTTPS origin, without a path or trailing slash");
+    }
+    if (config.AUTH_URL !== config.APP_URL) {
+      reject("AUTH_URL", "Must match APP_URL exactly");
+    }
+    if (config.EMAIL_PROVIDER !== "resend") {
+      reject("EMAIL_PROVIDER", "Hosted deployments require Resend magic-link delivery");
+    }
+    if (!config.RESEND_API_KEY?.trim() || /placeholder|replace-with/i.test(config.RESEND_API_KEY)) {
+      reject("RESEND_API_KEY", "A real server-side email API key is required");
+    }
+    if (
+      !config.EMAIL_FROM.includes("@") ||
+      /contentforge\.local|@localhost|@example\.(com|org|net)/i.test(config.EMAIL_FROM)
+    ) {
+      reject("EMAIL_FROM", "Use a sender on a verified email domain");
+    }
+    if (
+      /placeholder|replace-with|^ci-only|^build-only/i.test(config.AUTH_SECRET) ||
+      new Set(config.AUTH_SECRET).size < 8
+    ) {
+      reject("AUTH_SECRET", "Generate a unique random authentication secret");
+    }
+    if (
+      new Set(Buffer.from(config.ENCRYPTION_KEY, "base64")).size < 8 ||
+      config.ENCRYPTION_KEY === config.AUTH_SECRET
+    ) {
+      reject("ENCRYPTION_KEY", "Generate a separate random 32-byte encryption key");
+    }
+  }
+
   if (config.AI_TTS_PROVIDER !== "openai") return;
   for (const key of ["OPENAI_API_KEY", "OPENAI_TTS_MODEL", "OPENAI_TTS_VOICE"] as const) {
     if (!config[key]?.trim()) {
