@@ -16,10 +16,11 @@ The browser must set the multipart boundary itself.
 const form = new FormData();
 form.set("brandId", brandId);
 form.set("file", file);
-const response = await fetch(
-  `/api/v1/workspaces/${encodeURIComponent(workspaceSlug)}/assets`,
-  { method: "POST", body: form, credentials: "same-origin" },
-);
+const response = await fetch(`/api/v1/workspaces/${encodeURIComponent(workspaceSlug)}/assets`, {
+  method: "POST",
+  body: form,
+  credentials: "same-origin",
+});
 const result = await response.json();
 if (!response.ok) throw new Error(result.error.message);
 const assetId: string = result.data.id;
@@ -35,14 +36,14 @@ HTTP 201. Save the opaque ID; it is not a media URL or storage key.
 
 ## Failure
 
-| Status | Code | Meaning |
-| --- | --- | --- |
-| 400 | VALIDATION_ERROR | Invalid multipart, missing fields, spoofed or unsupported image, or size limit |
-| 401 | UNAUTHENTICATED | No valid session |
-| 403 | FORBIDDEN | Missing workspace write permission or rejected cross-origin mutation |
-| 404 | NOT_FOUND | Unknown/deleted workspace or brand outside the selected workspace |
-| 429 | RATE_LIMITED | Too many requests |
-| 500 | INTERNAL_ERROR | Unexpected storage/database failure |
+| Status | Code             | Meaning                                                                        |
+| ------ | ---------------- | ------------------------------------------------------------------------------ |
+| 400    | VALIDATION_ERROR | Invalid multipart, missing fields, spoofed or unsupported image, or size limit |
+| 401    | UNAUTHENTICATED  | No valid session                                                               |
+| 403    | FORBIDDEN        | Missing workspace write permission or rejected cross-origin mutation           |
+| 404    | NOT_FOUND        | Unknown/deleted workspace or brand outside the selected workspace              |
+| 429    | RATE_LIMITED     | Too many requests                                                              |
+| 500    | INTERNAL_ERROR   | Unexpected storage/database failure                                            |
 
 Example HTTP 401:
 
