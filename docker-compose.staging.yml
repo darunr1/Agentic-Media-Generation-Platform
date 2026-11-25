@@ -1,0 +1,153 @@
+name: sequence-staging
+
+# Standalone staging stack. Use --env-file .env.staging.local and -f docker-compose.staging.yml.
+# Only the web service is published, on loopback for a trusted TLS reverse proxy.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contentforge
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?Set STAGING_DB_PASSWORD}
+      POSTGRES_DB: contentforge_staging
+    volumes:
+      - contentforge_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contentforge -d contentforge_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Prevent API and queue consumers from starting against an unmigrated DB.
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    env_file: .env.staging.local
+    environment:
+      DATABASE_URL: postgresql://contentforge:${STAGING_DB_PASSWORD:?Set STAGING_DB_PASSWORD}@postgres:5432/contentforge_staging?schema=public
+      NODE_ENV: production
+      APP_DEPLOYMENT: staging
+      APP_URL: ${APP_URL:?Set HTTPS APP_URL}
+      AUTH_URL: ${APP_URL:?Set HTTPS APP_URL}
+      EMAIL_PROVIDER: resend
+    command: ["pnpm", "--filter", "@contentforge/database", "db:migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    env_file: .env.staging.local
+    environment:
+      DATABASE_URL: postgresql://contentforge:${STAGING_DB_PASSWORD:?Set STAGING_DB_PASSWORD}@postgres:5432/contentforge_staging?schema=public
+      LOCAL_STORAGE_DIR: /data
+      QUEUE_PROVIDER: postgres
+      STORAGE_PROVIDER: local
+      NODE_ENV: production
+      APP_DEPLOYMENT: staging
+      APP_URL: ${APP_URL:?Set HTTPS APP_URL}
+      AUTH_URL: ${APP_URL:?Set HTTPS APP_URL}
+      EMAIL_PROVIDER: resend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - contentforge_media:/data
+    ports:
+      - "127.0.0.1:${STAGING_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch("http://127.0.0.1:3000/api/readyz")
+            .then((response) => process.exit(response.ok ? 0 : 1))
+            .catch(() => process.exit(1));
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  worker:
+    restart: unless-stopped
+    stop_grace_period: 35s
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+    env_file: .env.staging.local
+    environment:
+      DATABASE_URL: postgresql://contentforge:${STAGING_DB_PASSWORD:?Set STAGING_DB_PASSWORD}@postgres:5432/contentforge_staging?schema=public
+      LOCAL_STORAGE_DIR: /data
+      QUEUE_PROVIDER: postgres
+      STORAGE_PROVIDER: local
+      WORKER_PORT: 3001
+      NODE_ENV: production
+      APP_DEPLOYMENT: staging
+      APP_URL: ${APP_URL:?Set HTTPS APP_URL}
+      AUTH_URL: ${APP_URL:?Set HTTPS APP_URL}
+      EMAIL_PROVIDER: resend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - contentforge_media:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch("http://127.0.0.1:3001/readyz")
+            .then((response) => process.exit(response.ok ? 0 : 1))
+            .catch(() => process.exit(1));
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  renderer:
+    restart: unless-stopped
+    stop_grace_period: 35s
+    build:
+      context: .
+      dockerfile: infra/docker/renderer.Dockerfile
+    env_file: .env.staging.local
+    environment:
+      DATABASE_URL: postgresql://contentforge:${STAGING_DB_PASSWORD:?Set STAGING_DB_PASSWORD}@postgres:5432/contentforge_staging?schema=public
+      QUEUE_PROVIDER: postgres
+      STORAGE_PROVIDER: local
+      RENDERER_PORT: 3002
+      LOCAL_STORAGE_DIR: /data
+      NODE_ENV: production
+      APP_DEPLOYMENT: staging
+      APP_URL: ${APP_URL:?Set HTTPS APP_URL}
+      AUTH_URL: ${APP_URL:?Set HTTPS APP_URL}
+      EMAIL_PROVIDER: resend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - contentforge_media:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch("http://127.0.0.1:3002/readyz")
+            .then((response) => process.exit(response.ok ? 0 : 1))
+            .catch(() => process.exit(1));
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  contentforge_postgres_data:
+  contentforge_media:
