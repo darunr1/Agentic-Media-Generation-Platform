@@ -10,7 +10,9 @@ const input = {
 };
 const sender = "Sequence <login@sequence.test>";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("Resend email delivery", () => {
   it("sends the configured sender and recipient and returns the provider ID", async () => {
@@ -42,7 +44,8 @@ describe("Resend email delivery", () => {
   });
 
   it("does not leak provider response bodies or fall back to console", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("secret token", { status: 403 })));
+    const response = new Response("secret token", { status: 403 });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
     await expect(new ResendEmailProvider("test-key", sender).send(input)).rejects.toThrow(
       /^Resend email request failed \(HTTP 403\)$/,
     );
