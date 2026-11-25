@@ -104,7 +104,12 @@ const baseEnvSchema = z.object({
 });
 
 const envSchema = baseEnvSchema.superRefine((config, ctx) => {
-  const appUrl = new URL(config.APP_URL);
+  let appUrl: URL;
+  try {
+    appUrl = new URL(config.APP_URL);
+  } catch {
+    return; // The base URL schema already reports this invalid value.
+  }
   const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(appUrl.hostname);
   const deployed =
     config.APP_DEPLOYMENT !== "local" || (config.NODE_ENV === "production" && !isLoopback);
