@@ -45,3 +45,44 @@ describe("TTS startup configuration", () => {
     );
   });
 });
+
+describe("hosted authentication configuration", () => {
+  const staging = {
+    ...baseConfig,
+    NODE_ENV: "production",
+    APP_DEPLOYMENT: "staging",
+    APP_URL: "https://staging.sequence.test",
+    AUTH_URL: "https://staging.sequence.test",
+    AUTH_SECRET: "unit-test-only-abcdefghijklmnopqrstuvwxyz-1234567890",
+    ENCRYPTION_KEY: Buffer.from(Array.from({ length: 32 }, (_, i) => i)).toString("base64"),
+    EMAIL_PROVIDER: "resend",
+    RESEND_API_KEY: "unit-test-key",
+    EMAIL_FROM: "Sequence <login@sequence.test>",
+  };
+
+  it("accepts valid hosted configuration without contacting the provider", () => {
+    expect(loadEnv(staging).EMAIL_PROVIDER).toBe("resend");
+  });
+
+  it.each([
+    ["NODE_ENV", "development"],
+    ["APP_URL", "http://staging.sequence.test"],
+    ["APP_URL", "https://localhost"],
+    ["AUTH_URL", "https://wrong.sequence.test"],
+    ["EMAIL_PROVIDER", "console"],
+    ["RESEND_API_KEY", ""],
+    ["EMAIL_FROM", "notifications@contentforge.local"],
+    ["AUTH_SECRET", "a".repeat(32)],
+    ["ENCRYPTION_KEY", Buffer.alloc(32).toString("base64")],
+  ])("rejects insecure %s", (key, value) => {
+    expect(() => loadEnv({ ...staging, [key]: value })).toThrow(key);
+  });
+
+  it("preserves local production-mode builds and demo Compose", () => {
+    expect(loadEnv({ ...baseConfig, NODE_ENV: "production" }).EMAIL_PROVIDER).toBe("console");
+  });
+
+  it("parses explicit false for host trust", () => {
+    expect(loadEnv({ ...baseConfig, AUTH_TRUST_HOST: "false" }).AUTH_TRUST_HOST).toBe(false);
+  });
+});

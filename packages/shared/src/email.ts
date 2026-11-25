@@ -3,7 +3,7 @@ import type { Env } from "./env";
 /**
  * EmailProvider — brief §16. One typed interface, two implementations: a
  * console logger (always available, what local dev and the demo run on) and
- * a documented Resend-backed adapter that only activates when
+ * a Resend-backed adapter that only activates when
  * RESEND_API_KEY is configured. Every notification event and the
  * passwordless-sign-in magic link both go through this interface, so
  * swapping providers never touches call sites.
@@ -61,37 +61,58 @@ export class ConsoleEmailProvider implements EmailProvider {
   }
 }
 
-/**
- * Documented configuration point for a real provider. Not wired to a live
- * HTTP call here — flip EMAIL_PROVIDER=resend and supply RESEND_API_KEY,
- * then implement the fetch call against https://api.resend.com/emails
- * (Bearer auth, JSON body { from, to, subject, html, text }). Left as a
- * typed stub rather than an unverified live integration: this build
- * environment has no Resend account to test a real send against, per the
- * "never invent successful API responses in production adapters" rule.
- */
+/** Resend-backed delivery. Never log API keys, response bodies or magic links. */
 export class ResendEmailProvider implements EmailProvider {
   readonly name = "resend";
 
-  constructor(private readonly apiKey: string | undefined) {}
+  constructor(
+    private readonly apiKey: string | undefined,
+    private readonly from?: string,
+  ) {}
 
-  async send(_input: SendEmailInput): Promise<SendEmailResult> {
-    if (!this.apiKey) {
-      throw new Error(
-        "ResendEmailProvider: RESEND_API_KEY is not configured. Setup required — see docs/local-development.md#email.",
-      );
+  async send(input: SendEmailInput): Promise<SendEmailResult> {
+    if (!this.apiKey?.trim() || !this.from?.trim()) {
+      throw new Error("Resend email requires RESEND_API_KEY and EMAIL_FROM");
     }
-    throw new Error(
-      "ResendEmailProvider is a documented stub. Implement the POST https://api.resend.com/emails call before using EMAIL_PROVIDER=resend in production.",
-    );
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: this.from,
+        to: [input.to],
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    }).catch(() => {
+      throw new Error("Resend email request failed");
+    });
+    if (!response.ok) {
+      throw new Error(`Resend email request failed (HTTP ${response.status})`);
+    }
+
+    const result: unknown = await response.json().catch(() => null);
+    if (
+      !result ||
+      typeof result !== "object" ||
+      !("id" in result) ||
+      typeof result.id !== "string" ||
+      !result.id
+    ) {
+      throw new Error("Resend returned an invalid email delivery response");
+    }
+    return { provider: this.name, messageId: result.id };
   }
 
   async healthCheck() {
     return {
-      healthy: false,
-      message: this.apiKey
-        ? "Resend adapter is a documented stub and not yet implemented."
-        : "RESEND_API_KEY is not configured.",
+      healthy: Boolean(this.apiKey?.trim() && this.from?.trim()),
+      message: "Configuration only; real email delivery requires a live smoke test.",
     };
   }
 }
@@ -102,12 +123,12 @@ let cachedProvider: EmailProvider | undefined;
  * driven entirely by validated env — used by auth (magic links) and the
  * notification dispatcher alike. */
 export function createEmailProviderFromEnv(
-  env: Pick<Env, "EMAIL_PROVIDER" | "RESEND_API_KEY">,
+  env: Pick<Env, "EMAIL_PROVIDER" | "RESEND_API_KEY" | "EMAIL_FROM">,
 ): EmailProvider {
   if (cachedProvider) return cachedProvider;
   cachedProvider =
     env.EMAIL_PROVIDER === "resend"
-      ? new ResendEmailProvider(env.RESEND_API_KEY)
+      ? new ResendEmailProvider(env.RESEND_API_KEY, env.EMAIL_FROM)
       : new ConsoleEmailProvider();
   return cachedProvider;
 }
